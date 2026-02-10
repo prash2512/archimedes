@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Archimedes</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 h-screen flex flex-col overflow-hidden">
+
+    <!-- Top bar -->
+    <header class="h-12 bg-gray-900 border-b border-gray-800 flex items-center px-4">
+        <span class="text-sm font-semibold tracking-wide">Archimedes</span>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+
+        <!-- Toolbox sidebar -->
+        <aside class="w-56 bg-gray-900 border-r border-gray-800 p-3 flex flex-col gap-2">
+            <span class="text-xs text-gray-500 uppercase tracking-wider mb-1">Blocks</span>
+            <div id="toolbox" hx-get="/api/blocks/html" hx-trigger="load" hx-swap="innerHTML">
+            </div>
+        </aside>
+
+        <!-- Canvas -->
+        <main class="flex-1 bg-gray-950 relative">
+            <div class="absolute inset-0 flex items-center justify-center text-gray-700 text-sm">
+                canvas
+            </div>
+        </main>
+
+    </div>
+
+</body>
+</html>
