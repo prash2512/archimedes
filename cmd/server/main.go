@@ -25,9 +25,14 @@ func main() {
 
 	mux.HandleFunc("GET /api/blocks/html", func(w http.ResponseWriter, r *http.Request) {
 		for _, b := range blocks.Catalog {
-			fmt.Fprintf(w, `<div class="px-3 py-2 bg-gray-800 rounded text-sm cursor-grab hover:bg-gray-700 transition-colors">%s</div>`, b.Name)
+			fmt.Fprintf(w, `<div class="flex items-center gap-2 px-3 py-2 bg-gray-800 rounded text-sm cursor-grab hover:bg-gray-700 transition-colors">
+				<img src="/static/icons/%s.svg" class="w-4 h-4 invert opacity-70" alt="">
+				<span>%s</span>
+			</div>`, b.Kind, b.Name)
 		}
 	})
+
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
 	log.Println("listening on :8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
