@@ -25,10 +25,10 @@ func main() {
 
 	mux.HandleFunc("GET /api/blocks/html", func(w http.ResponseWriter, r *http.Request) {
 		for _, b := range blocks.Catalog {
-			fmt.Fprintf(w, `<div class="flex items-center gap-2 px-3 py-2 bg-gray-800 rounded text-sm cursor-grab hover:bg-gray-700 transition-colors">
-				<img src="/static/icons/%s.svg" class="w-4 h-4 invert opacity-70" alt="">
+			fmt.Fprintf(w, `<div draggable="true" data-kind="%s" data-name="%s" class="flex items-center gap-2 px-3 py-2 bg-gray-800 rounded text-sm cursor-grab hover:bg-gray-700 transition-colors select-none">
+				<img src="/static/icons/%s.svg" class="w-4 h-4 invert opacity-70" alt="" draggable="false">
 				<span>%s</span>
-			</div>`, b.Kind, b.Name)
+			</div>`, b.Kind, b.Name, b.Kind, b.Name)
 		}
 	})
 

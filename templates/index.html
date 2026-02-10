@@ -24,13 +24,64 @@
         </aside>
 
         <!-- Canvas -->
-        <main class="flex-1 bg-gray-950 relative">
-            <div class="absolute inset-0 flex items-center justify-center text-gray-700 text-sm">
-                canvas
-            </div>
+        <main id="canvas" class="flex-1 bg-gray-950 relative overflow-hidden">
         </main>
 
     </div>
+
+    <script>
+    const canvas = document.getElementById('canvas');
+
+    // Sidebar drag start
+    document.getElementById('toolbox').addEventListener('dragstart', (e) => {
+        const block = e.target.closest('[data-kind]');
+        if (!block) return;
+        e.dataTransfer.setData('text/plain', JSON.stringify({
+            kind: block.dataset.kind,
+            name: block.dataset.name
+        }));
+    });
+
+    // Canvas drop zone
+    canvas.addEventListener('dragover', (e) => e.preventDefault());
+
+    canvas.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        addBlock(data.kind, data.name, x, y);
+    });
+
+    function addBlock(kind, name, x, y) {
+        const el = document.createElement('div');
+        el.className = 'absolute flex items-center gap-2 px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm select-none cursor-move hover:border-gray-500 transition-colors';
+        el.style.left = (x - 60) + 'px';
+        el.style.top = (y - 16) + 'px';
+        el.innerHTML = `<img src="/static/icons/${kind}.svg" class="w-4 h-4 invert opacity-70"><span>${name}</span>`;
+        el.addEventListener('mousedown', startDrag);
+        canvas.appendChild(el);
+    }
+
+    // Drag blocks on canvas to reposition
+    function startDrag(e) {
+        const el = e.currentTarget;
+        const offsetX = e.clientX - el.offsetLeft;
+        const offsetY = e.clientY - el.offsetTop;
+
+        function onMove(e) {
+            el.style.left = (e.clientX - offsetX) + 'px';
+            el.style.top = (e.clientY - offsetY) + 'px';
+        }
+        function onUp() {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    }
+    </script>
 
 </body>
 </html>
