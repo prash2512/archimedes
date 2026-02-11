@@ -24,15 +24,27 @@
         </aside>
 
         <!-- Canvas -->
-        <main id="canvas" class="flex-1 bg-gray-950 relative overflow-hidden">
+        <main id="canvas" class="flex-1 relative overflow-hidden"
+              style="background-color: #030712; background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px); background-size: 24px 24px;">
+            <svg id="connections" class="absolute inset-0 w-full h-full" style="pointer-events: none;">
+                <defs>
+                    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                        <polygon points="0 0, 8 3, 0 6" fill="#3b82f6" opacity="0.7" />
+                    </marker>
+                </defs>
+            </svg>
         </main>
 
     </div>
 
     <script>
     const canvas = document.getElementById('canvas');
+    const svg = document.getElementById('connections');
+    let nextId = 0;
+    const edges = [];
+    let selected = null;
 
-    // Sidebar drag start
+    // Sidebar drag
     document.getElementById('toolbox').addEventListener('dragstart', (e) => {
         const block = e.target.closest('[data-kind]');
         if (!block) return;
@@ -42,44 +54,125 @@
         }));
     });
 
-    // Canvas drop zone
     canvas.addEventListener('dragover', (e) => e.preventDefault());
 
     canvas.addEventListener('drop', (e) => {
         e.preventDefault();
         const data = JSON.parse(e.dataTransfer.getData('text/plain'));
         const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        addBlock(data.kind, data.name, x, y);
+        addBlock(data.kind, data.name, e.clientX - rect.left, e.clientY - rect.top);
+    });
+
+    // Click on canvas background deselects
+    canvas.addEventListener('click', (e) => {
+        if (e.target === canvas) deselect();
+    });
+
+    // Cmd/Ctrl+Z undoes the last connection
+    document.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
+            e.preventDefault();
+            const edge = edges.pop();
+            if (edge) edge.line.remove();
+        }
     });
 
     function addBlock(kind, name, x, y) {
         const el = document.createElement('div');
+        el.id = 'block-' + (++nextId);
+        el.dataset.kind = kind;
         el.className = 'absolute flex items-center gap-2 px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm select-none cursor-move hover:border-gray-500 transition-colors';
         el.style.left = (x - 60) + 'px';
         el.style.top = (y - 16) + 'px';
         el.innerHTML = `<img src="/static/icons/${kind}.svg" class="w-4 h-4 invert opacity-70"><span>${name}</span>`;
-        el.addEventListener('mousedown', startDrag);
+        el.addEventListener('mousedown', onMouseDown);
         canvas.appendChild(el);
     }
 
-    // Drag blocks on canvas to reposition
-    function startDrag(e) {
+    // Combined drag + click: small moves are clicks, larger moves are drags
+    function onMouseDown(e) {
+        if (e.button !== 0) return;
+        e.preventDefault();
         const el = e.currentTarget;
+        const startX = e.clientX, startY = e.clientY;
         const offsetX = e.clientX - el.offsetLeft;
         const offsetY = e.clientY - el.offsetTop;
+        let dragged = false;
 
         function onMove(e) {
+            if (!dragged && Math.abs(e.clientX - startX) < 4 && Math.abs(e.clientY - startY) < 4) return;
+            dragged = true;
             el.style.left = (e.clientX - offsetX) + 'px';
             el.style.top = (e.clientY - offsetY) + 'px';
+            updateEdges(el);
         }
         function onUp() {
             document.removeEventListener('mousemove', onMove);
             document.removeEventListener('mouseup', onUp);
+            if (!dragged) handleClick(el);
         }
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onUp);
+    }
+
+    function handleClick(el) {
+        if (!selected) {
+            selected = el;
+            el.style.outline = '2px solid rgba(96, 165, 250, 0.6)';
+            el.style.outlineOffset = '2px';
+        } else if (selected === el) {
+            deselect();
+        } else {
+            connect(selected, el);
+            deselect();
+        }
+    }
+
+    function deselect() {
+        if (selected) {
+            selected.style.outline = '';
+            selected.style.outlineOffset = '';
+        }
+        selected = null;
+    }
+
+    function connect(from, to) {
+        if (edges.some(e => e.from === from && e.to === to)) return;
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('stroke', '#3b82f6');
+        line.setAttribute('stroke-width', '2');
+        line.setAttribute('stroke-opacity', '0.6');
+        line.setAttribute('marker-end', 'url(#arrowhead)');
+        svg.appendChild(line);
+        const edge = { from, to, line };
+        edges.push(edge);
+        drawEdge(edge);
+    }
+
+    function blockCenter(el) {
+        return { x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + el.offsetHeight / 2 };
+    }
+
+    // Line endpoint at the block's rectangular border, not its center
+    function edgePoint(center, target, hw, hh) {
+        const dx = target.x - center.x, dy = target.y - center.y;
+        if (dx === 0 && dy === 0) return { ...center };
+        const scale = Math.min(hw / Math.abs(dx), hh / Math.abs(dy));
+        return { x: center.x + dx * scale, y: center.y + dy * scale };
+    }
+
+    function drawEdge(edge) {
+        const fc = blockCenter(edge.from), tc = blockCenter(edge.to);
+        const a = edgePoint(fc, tc, edge.from.offsetWidth / 2, edge.from.offsetHeight / 2);
+        const b = edgePoint(tc, fc, edge.to.offsetWidth / 2, edge.to.offsetHeight / 2);
+        edge.line.setAttribute('x1', a.x); edge.line.setAttribute('y1', a.y);
+        edge.line.setAttribute('x2', b.x); edge.line.setAttribute('y2', b.y);
+    }
+
+    function updateEdges(el) {
+        for (const e of edges) {
+            if (e.from === el || e.to === el) drawEdge(e);
+        }
     }
     </script>
 
