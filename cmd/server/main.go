@@ -9,6 +9,7 @@ import (
 
 	"github.com/prashanth/archimedes/internal/blocks"
 	_ "github.com/prashanth/archimedes/internal/blocks/datastore"
+	"github.com/prashanth/archimedes/internal/engine"
 )
 
 func main() {
@@ -39,6 +40,22 @@ func main() {
 				<span>%s</span>
 			</div>`, b.Kind(), b.Name(), b.Kind(), b.Name())
 		}
+	})
+
+	mux.HandleFunc("POST /api/topology", func(w http.ResponseWriter, r *http.Request) {
+		var topo engine.Topology
+		if err := json.NewDecoder(r.Body).Decode(&topo); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		g, err := engine.BuildGraph(topo)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		srcs := g.Sources()
+		log.Printf("topology: %d blocks, %d edges, %d sources", len(topo.Blocks), len(topo.Edges), len(srcs))
+		w.WriteHeader(http.StatusOK)
 	})
 
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
