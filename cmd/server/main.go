@@ -8,7 +8,10 @@ import (
 	"net/http"
 
 	"github.com/prashanth/archimedes/internal/blocks"
+	_ "github.com/prashanth/archimedes/internal/blocks/cache"
 	_ "github.com/prashanth/archimedes/internal/blocks/datastore"
+	_ "github.com/prashanth/archimedes/internal/blocks/queue"
+	_ "github.com/prashanth/archimedes/internal/blocks/search"
 	"github.com/prashanth/archimedes/internal/engine"
 )
 
