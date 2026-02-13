@@ -56,9 +56,13 @@ func main() {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
-		srcs := g.Sources()
-		log.Printf("topology: %d blocks, %d edges, %d sources", len(topo.Blocks), len(topo.Edges), len(srcs))
-		w.WriteHeader(http.StatusOK)
+		results, err := engine.Simulate(g, topo.RPS)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"blocks": results})
 	})
 
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
