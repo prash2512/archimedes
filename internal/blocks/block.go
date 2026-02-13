@@ -38,3 +38,12 @@ type Block interface {
 }
 
 var Types []Block
+
+func ByKind(kind string) (Block, bool) {
+	for _, b := range Types {
+		if b.Kind() == kind {
+			return b, true
+		}
+	}
+	return nil, false
+}

@@ -1,6 +1,9 @@
 package engine
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 type Node struct {
 	ID       string
@@ -26,6 +29,7 @@ type TopoEdge struct {
 type Topology struct {
 	Blocks []TopoBlock `json:"blocks"`
 	Edges  []TopoEdge  `json:"edges"`
+	RPS    float64     `json:"rps"`
 }
 
 func BuildGraph(topo Topology) (*Graph, error) {
@@ -78,4 +82,38 @@ func (g *Graph) Sources() []*Node {
 		}
 	}
 	return srcs
+}
+
+// TopoOrder returns node IDs in topological order (Kahn's algorithm).
+// Returns an error if the graph contains a cycle.
+func (g *Graph) TopoOrder() ([]string, error) {
+	deg := make(map[string]int, len(g.incoming))
+	for id, d := range g.incoming {
+		deg[id] = d
+	}
+
+	var queue []string
+	for id, d := range deg {
+		if d == 0 {
+			queue = append(queue, id)
+		}
+	}
+
+	var order []string
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		order = append(order, id)
+		for _, down := range g.nodes[id].outgoing {
+			deg[down]--
+			if deg[down] == 0 {
+				queue = append(queue, down)
+			}
+		}
+	}
+
+	if len(order) != len(g.nodes) {
+		return nil, errors.New("cycle detected in topology")
+	}
+	return order, nil
 }
