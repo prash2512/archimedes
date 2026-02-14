@@ -15,6 +15,97 @@ type BlockResult struct {
 	DiskUtil   float64 `json:"disk_util"`
 	Bottleneck float64 `json:"bottleneck"`
 	Health     string  `json:"health"`
+	QueueDepth float64 `json:"queue_depth"`
+}
+
+type BlockState struct {
+	Queue float64
+}
+
+type SimState struct {
+	Blocks map[string]*BlockState
+}
+
+func NewSimState(g *Graph) *SimState {
+	s := &SimState{Blocks: make(map[string]*BlockState, len(g.nodes))}
+	for id := range g.nodes {
+		s.Blocks[id] = &BlockState{}
+	}
+	return s
+}
+
+func (s *SimState) AllDrained() bool {
+	for _, bs := range s.Blocks {
+		if bs.Queue > 0.5 {
+			return false
+		}
+	}
+	return true
+}
+
+const tickDt = 0.1 // seconds per tick
+
+func SimulateTick(g *Graph, rps float64, state *SimState) ([]BlockResult, error) {
+	order, err := g.TopoOrder()
+	if err != nil {
+		return nil, err
+	}
+
+	arriving := make(map[string]float64)
+	for _, src := range g.Sources() {
+		arriving[src.ID] = rps * tickDt
+	}
+
+	results := make([]BlockResult, 0, len(order))
+	for _, id := range order {
+		node := g.nodes[id]
+		bs := state.Blocks[id]
+
+		total := bs.Queue + arriving[id]
+		cap := nodeCapacity(node) * tickDt
+		processed := math.Min(total, cap)
+		bs.Queue = total - processed
+
+		effectiveRPS := processed / tickDt
+		br := computeBlock(node, effectiveRPS)
+		br.QueueDepth = bs.Queue
+		results = append(results, br)
+
+		for _, down := range node.outgoing {
+			arriving[down] += processed
+		}
+	}
+	return results, nil
+}
+
+func nodeCapacity(node *Node) float64 {
+	b, ok := blocks.ByKind(node.Kind)
+	if !ok || node.Kind == "user" {
+		return math.MaxFloat64
+	}
+	return BlockCapacity(b.Profile())
+}
+
+func BlockCapacity(p blocks.Profile) float64 {
+	op := p.Read // MVP: match computeBlock assumption
+	cap := math.MaxFloat64
+
+	if op.CPUMs > 0 && p.CPUCores > 0 {
+		cap = math.Min(cap, float64(p.CPUCores)*1000/op.CPUMs)
+	}
+
+	if p.DiskIOPS > 0 && op.DiskIOs > 0 {
+		diskPerOp := op.DiskIOs * (1 - p.BufferPoolRatio)
+		effIOPS := float64(p.DiskIOPS)
+		if op.Sequential {
+			effIOPS *= 10
+		}
+		if diskPerOp > 0 {
+			cap = math.Min(cap, effIOPS/diskPerOp)
+		}
+	}
+
+	return cap
 }
 
 func Simulate(g *Graph, rps float64) ([]BlockResult, error) {

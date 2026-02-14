@@ -4,6 +4,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/prashanth/archimedes/internal/blocks"
 	_ "github.com/prashanth/archimedes/internal/blocks/cache"
 	_ "github.com/prashanth/archimedes/internal/blocks/datastore"
 	_ "github.com/prashanth/archimedes/internal/blocks/queue"
@@ -107,6 +108,106 @@ func TestSimulateRedisHighRPS(t *testing.T) {
 	}
 	if r.Health != "yellow" {
 		t.Errorf("health: want yellow, got %s", r.Health)
+	}
+}
+
+func TestBlockCapacity(t *testing.T) {
+	tests := []struct {
+		kind string
+		want float64
+	}{
+		{"service", 4000},
+		{"load_balancer", 100000},
+		{"api_gateway", 40000},
+		{"redis", 100000},
+		{"sql_datastore", 8000},  // read-limited by CPU: 4*1000/0.5
+		{"kafka", 50000},         // sequential disk: 5000*10/1
+		{"elasticsearch", 5000},  // disk: 5000/(2*0.5)
+	}
+	for _, tt := range tests {
+		b, ok := blocks.ByKind(tt.kind)
+		if !ok {
+			t.Fatalf("unknown kind %s", tt.kind)
+		}
+		got := BlockCapacity(b.Profile())
+		if !approx(got, tt.want) {
+			t.Errorf("%s: want %g, got %g", tt.kind, tt.want, got)
+		}
+	}
+}
+
+func TestSimulateTickQueueBuilds(t *testing.T) {
+	// Service capacity = 4000 RPS. Send 8000 → queue should grow.
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{{ID: "s", Kind: "service"}},
+	})
+	state := NewSimState(g)
+
+	// Run 5 ticks at 8000 RPS (double capacity)
+	for i := 0; i < 5; i++ {
+		SimulateTick(g, 8000, state)
+	}
+
+	// Each tick: arriving=800, capacity=400, queue grows by 400 per tick
+	// After 5 ticks: queue = 5 * 400 = 2000
+	q := state.Blocks["s"].Queue
+	if !approx(q, 2000) {
+		t.Errorf("queue after 5 ticks: want 2000, got %g", q)
+	}
+}
+
+func TestSimulateTickDrains(t *testing.T) {
+	// Overload for 5 ticks, then drain with RPS=0
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{{ID: "s", Kind: "service"}},
+	})
+	state := NewSimState(g)
+
+	for i := 0; i < 5; i++ {
+		SimulateTick(g, 8000, state)
+	}
+	// Queue = 2000, capacity per tick = 400
+	// Should drain in 5 ticks (2000/400 = 5)
+	for i := 0; i < 5; i++ {
+		SimulateTick(g, 0, state)
+	}
+	q := state.Blocks["s"].Queue
+	if q > 0.5 {
+		t.Errorf("queue after drain: want ~0, got %g", q)
+	}
+}
+
+func TestSimulateTickChainThroughput(t *testing.T) {
+	// User → Service → SQL at 500 RPS (within capacity for both)
+	// Service capacity=4000, SQL read capacity=8000
+	// All requests should flow through, no queue buildup
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "s", Kind: "service"},
+			{ID: "db", Kind: "sql_datastore"},
+		},
+		Edges: []TopoEdge{
+			{From: "u", To: "s"},
+			{From: "s", To: "db"},
+		},
+	})
+	state := NewSimState(g)
+
+	results, _ := SimulateTick(g, 500, state)
+	byID := map[string]BlockResult{}
+	for _, r := range results {
+		byID[r.ID] = r
+	}
+
+	if !approx(byID["s"].RPS, 500) {
+		t.Errorf("service rps: want 500, got %g", byID["s"].RPS)
+	}
+	if !approx(byID["db"].RPS, 500) {
+		t.Errorf("db rps: want 500, got %g", byID["db"].RPS)
+	}
+	if state.Blocks["s"].Queue > 0.5 {
+		t.Errorf("service queue should be 0, got %g", state.Blocks["s"].Queue)
 	}
 }
 
