@@ -6,6 +6,14 @@
     <title>Archimedes</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <style>
+        @keyframes pipe-flow {
+            to { stroke-dashoffset: -24; }
+        }
+        .edge-flow {
+            animation: pipe-flow 0.6s linear infinite;
+        }
+    </style>
 </head>
 <body class="bg-gray-950 text-gray-100 h-screen flex flex-col overflow-hidden">
 
@@ -45,8 +53,14 @@
               style="background-color: #030712; background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px); background-size: 24px 24px;">
             <svg id="connections" class="absolute inset-0 w-full h-full" style="pointer-events: none;">
                 <defs>
-                    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                    <marker id="arrow-blue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
                         <polygon points="0 0, 8 3, 0 6" fill="#3b82f6" opacity="0.7" />
+                    </marker>
+                    <marker id="arrow-amber" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                        <polygon points="0 0, 8 3, 0 6" fill="#f59e0b" opacity="0.7" />
+                    </marker>
+                    <marker id="arrow-red" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                        <polygon points="0 0, 8 3, 0 6" fill="#ef4444" opacity="0.7" />
                     </marker>
                 </defs>
             </svg>
@@ -90,7 +104,7 @@
         if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
             e.preventDefault();
             const edge = edges.pop();
-            if (edge) edge.line.remove();
+            if (edge) { edge.pipe.remove(); edge.flow.remove(); }
         }
     });
 
@@ -155,13 +169,26 @@
 
     function connect(from, to) {
         if (edges.some(e => e.from === from && e.to === to)) return;
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('stroke', '#3b82f6');
-        line.setAttribute('stroke-width', '2');
-        line.setAttribute('stroke-opacity', '0.6');
-        line.setAttribute('marker-end', 'url(#arrowhead)');
-        svg.appendChild(line);
-        const edge = { from, to, line };
+
+        // Background pipe
+        const pipe = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        pipe.setAttribute('stroke', '#3b82f6');
+        pipe.setAttribute('stroke-width', '2');
+        pipe.setAttribute('stroke-opacity', '0.15');
+        pipe.setAttribute('stroke-linecap', 'round');
+
+        // Animated flow layer
+        const flow = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        flow.setAttribute('stroke', '#3b82f6');
+        flow.setAttribute('stroke-width', '2');
+        flow.setAttribute('stroke-opacity', '0.8');
+        flow.setAttribute('stroke-linecap', 'round');
+        flow.setAttribute('stroke-dasharray', '6 18');
+        flow.setAttribute('marker-end', 'url(#arrow-blue)');
+
+        svg.appendChild(pipe);
+        svg.appendChild(flow);
+        const edge = { from, to, pipe, flow };
         edges.push(edge);
         drawEdge(edge);
     }
@@ -182,8 +209,10 @@
         const fc = blockCenter(edge.from), tc = blockCenter(edge.to);
         const a = edgePoint(fc, tc, edge.from.offsetWidth / 2, edge.from.offsetHeight / 2);
         const b = edgePoint(tc, fc, edge.to.offsetWidth / 2, edge.to.offsetHeight / 2);
-        edge.line.setAttribute('x1', a.x); edge.line.setAttribute('y1', a.y);
-        edge.line.setAttribute('x2', b.x); edge.line.setAttribute('y2', b.y);
+        for (const el of [edge.pipe, edge.flow]) {
+            el.setAttribute('x1', a.x); el.setAttribute('y1', a.y);
+            el.setAttribute('x2', b.x); el.setAttribute('y2', b.y);
+        }
     }
 
     function updateEdges(el) {
@@ -241,6 +270,7 @@
             const data = JSON.parse(e.data);
             tickCounter.textContent = data.tick;
             applyResults(data.blocks);
+            applyEdgeResults(data.blocks);
         };
 
         playing = true;
@@ -254,6 +284,43 @@
         playing = false;
         pauseIcon.classList.add('hidden');
         playIcon.classList.remove('hidden');
+        clearEdgeResults();
+    }
+
+    const pipeColors = { green: '#3b82f6', yellow: '#f59e0b', red: '#ef4444' };
+    const arrowIds = { green: 'arrow-blue', yellow: 'arrow-amber', red: 'arrow-red' };
+
+    function applyEdgeResults(blockResults) {
+        const byId = {};
+        for (const b of blockResults) byId[b.id] = b;
+
+        for (const edge of edges) {
+            const src = byId[edge.from.id];
+            const dst = byId[edge.to.id];
+            if (!src) continue;
+
+            const rps = src.rps || 0;
+            const health = (dst && dst.health) || 'green';
+            const color = pipeColors[health];
+
+            edge.pipe.setAttribute('stroke', color);
+            edge.flow.setAttribute('stroke', color);
+            edge.flow.setAttribute('marker-end', `url(#${arrowIds[health]})`);
+            edge.flow.classList.add('edge-flow');
+
+            const speed = Math.max(0.15, 0.6 - (rps / 20000));
+            edge.flow.style.animationDuration = speed + 's';
+        }
+    }
+
+    function clearEdgeResults() {
+        for (const edge of edges) {
+            edge.pipe.setAttribute('stroke', '#3b82f6');
+            edge.flow.setAttribute('stroke', '#3b82f6');
+            edge.flow.setAttribute('marker-end', 'url(#arrow-blue)');
+            edge.flow.classList.remove('edge-flow');
+            edge.flow.style.animationDuration = '';
+        }
     }
 
     const healthColors = {
