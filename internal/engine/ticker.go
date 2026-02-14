@@ -8,6 +8,7 @@ import (
 type TickResult struct {
 	Tick   int           `json:"tick"`
 	Blocks []BlockResult `json:"blocks"`
+	Done   bool          `json:"done,omitempty"`
 }
 
 type Sim struct {
@@ -17,6 +18,8 @@ type Sim struct {
 	tick    int
 	stop    chan struct{}
 	running bool
+	paused  bool
+	state   *SimState
 	subs    []chan TickResult
 }
 
@@ -62,6 +65,8 @@ func (s *Sim) Play(topo Topology) error {
 	s.tick = 0
 	s.stop = make(chan struct{})
 	s.running = true
+	s.paused = false
+	s.state = NewSimState(g)
 
 	go s.loop()
 	return nil
@@ -70,8 +75,9 @@ func (s *Sim) Play(topo Topology) error {
 func (s *Sim) Pause() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.running {
-		s.stopLocked()
+	if s.running && !s.paused {
+		s.rps = 0
+		s.paused = true
 	}
 }
 
@@ -86,6 +92,15 @@ func (s *Sim) UpdateRPS(rps float64) {
 	s.rps = rps
 }
 
+func (s *Sim) broadcast(tr TickResult) {
+	for _, ch := range s.subs {
+		select {
+		case ch <- tr:
+		default:
+		}
+	}
+}
+
 func (s *Sim) loop() {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -97,17 +112,20 @@ func (s *Sim) loop() {
 		case <-ticker.C:
 			s.mu.Lock()
 			s.tick++
-			results, err := Simulate(s.graph, s.rps)
+			results, err := SimulateTick(s.graph, s.rps, s.state)
 			if err != nil {
 				s.mu.Unlock()
 				continue
 			}
-			tr := TickResult{Tick: s.tick, Blocks: results}
-			for _, ch := range s.subs {
-				select {
-				case ch <- tr:
-				default: // slow consumer, drop
-				}
+
+			done := s.paused && s.state.AllDrained()
+			tr := TickResult{Tick: s.tick, Blocks: results, Done: done}
+			s.broadcast(tr)
+
+			if done {
+				s.stopLocked()
+				s.mu.Unlock()
+				return
 			}
 			s.mu.Unlock()
 		}
