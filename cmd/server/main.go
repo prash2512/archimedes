@@ -18,6 +18,7 @@ import (
 func main() {
 	mux := http.NewServeMux()
 	tmpl := template.Must(template.ParseFiles("templates/index.html"))
+	sim := engine.NewSim()
 
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		tmpl.Execute(w, nil)
@@ -63,6 +64,61 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"blocks": results})
+	})
+
+	mux.HandleFunc("POST /api/play", func(w http.ResponseWriter, r *http.Request) {
+		var topo engine.Topology
+		if err := json.NewDecoder(r.Body).Decode(&topo); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := sim.Play(topo); err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("POST /api/pause", func(w http.ResponseWriter, r *http.Request) {
+		sim.Pause()
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("POST /api/rps", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			RPS float64 `json:"rps"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		sim.UpdateRPS(body.RPS)
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("GET /api/events", func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming not supported", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		ch := sim.Subscribe()
+		defer sim.Unsubscribe(ch)
+
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			case tr := <-ch:
+				data, _ := json.Marshal(tr)
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				flusher.Flush()
+			}
+		}
 	})
 
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
