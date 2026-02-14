@@ -256,6 +256,7 @@
     }
 
     async function play() {
+        if (evtSource) { evtSource.close(); evtSource = null; }
         const topo = buildTopology();
         if (topo.blocks.length === 0) return;
         const resp = await fetch('/api/play', {
@@ -271,6 +272,7 @@
             tickCounter.textContent = data.tick;
             applyResults(data.blocks);
             applyEdgeResults(data.blocks);
+            if (data.done) stopPlayback();
         };
 
         playing = true;
@@ -279,7 +281,14 @@
     }
 
     async function pause() {
+        playing = false;
+        pauseIcon.classList.add('hidden');
+        playIcon.classList.remove('hidden');
         await fetch('/api/pause', { method: 'POST' });
+        // EventSource stays open — drain animation plays until done:true
+    }
+
+    function stopPlayback() {
         if (evtSource) { evtSource.close(); evtSource = null; }
         playing = false;
         pauseIcon.classList.add('hidden');
@@ -299,17 +308,21 @@
             const dst = byId[edge.to.id];
             if (!src) continue;
 
-            const rps = src.rps || 0;
             const health = (dst && dst.health) || 'green';
             const color = pipeColors[health];
+            const rps = dst ? dst.rps : (src.rps || 0);
 
             edge.pipe.setAttribute('stroke', color);
             edge.flow.setAttribute('stroke', color);
             edge.flow.setAttribute('marker-end', `url(#${arrowIds[health]})`);
-            edge.flow.classList.add('edge-flow');
 
-            const speed = Math.max(0.15, 0.6 - (rps / 20000));
-            edge.flow.style.animationDuration = speed + 's';
+            if (rps > 0) {
+                edge.flow.classList.add('edge-flow');
+                const speed = Math.max(0.15, 0.6 - (rps / 20000));
+                edge.flow.style.animationDuration = speed + 's';
+            } else {
+                edge.flow.classList.remove('edge-flow');
+            }
         }
     }
 
@@ -358,6 +371,18 @@
             row.innerHTML = metrics.map(m =>
                 `<span class="${utilColor(m.val)}"><span class="text-gray-500">${m.label}</span> ${Math.round(m.val * 100)}%</span>`
             ).join('');
+
+            let qRow = el.querySelector('.queue-row');
+            if (b.queue_depth > 0.5) {
+                if (!qRow) {
+                    qRow = document.createElement('div');
+                    qRow.className = 'queue-row text-xs mt-0.5';
+                    el.appendChild(qRow);
+                }
+                qRow.innerHTML = `<span class="text-orange-400"><span class="text-gray-500">Queue</span> ${Math.round(b.queue_depth).toLocaleString()}</span>`;
+            } else if (qRow) {
+                qRow.remove();
+            }
         }
     }
     </script>

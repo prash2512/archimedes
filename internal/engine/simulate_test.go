@@ -137,22 +137,23 @@ func TestBlockCapacity(t *testing.T) {
 }
 
 func TestSimulateTickQueueBuilds(t *testing.T) {
-	// Service capacity = 4000 RPS. Send 8000 → queue should grow.
+	// Service capacity = 4000 RPS. Send 8000 → queue should grow each tick.
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{{ID: "s", Kind: "service"}},
 	})
 	state := NewSimState(g)
 
-	// Run 5 ticks at 8000 RPS (double capacity)
+	var prev float64
 	for i := 0; i < 5; i++ {
 		SimulateTick(g, 8000, state)
+		q := state.Blocks["s"].Queue
+		if q <= prev {
+			t.Fatalf("tick %d: queue should grow, got %g (prev %g)", i+1, q, prev)
+		}
+		prev = q
 	}
-
-	// Each tick: arriving=800, capacity=400, queue grows by 400 per tick
-	// After 5 ticks: queue = 5 * 400 = 2000
-	q := state.Blocks["s"].Queue
-	if !approx(q, 2000) {
-		t.Errorf("queue after 5 ticks: want 2000, got %g", q)
+	if prev < 1000 {
+		t.Errorf("queue after 5 overloaded ticks should be large, got %g", prev)
 	}
 }
 
@@ -166,14 +167,31 @@ func TestSimulateTickDrains(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		SimulateTick(g, 8000, state)
 	}
-	// Queue = 2000, capacity per tick = 400
-	// Should drain in 5 ticks (2000/400 = 5)
-	for i := 0; i < 5; i++ {
+	peak := state.Blocks["s"].Queue
+	// Drain: run enough ticks for queue to empty
+	for i := 0; i < 20; i++ {
 		SimulateTick(g, 0, state)
 	}
 	q := state.Blocks["s"].Queue
 	if q > 0.5 {
-		t.Errorf("queue after drain: want ~0, got %g", q)
+		t.Errorf("queue after drain: want ~0, got %g (peak was %g)", q, peak)
+	}
+}
+
+func TestSimulateTickQueueAtHighUtil(t *testing.T) {
+	// Service at 90% raw load (3600 RPS, capacity 4000) should queue
+	// due to contention effects even though raw capacity isn't exceeded
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{{ID: "s", Kind: "service"}},
+	})
+	state := NewSimState(g)
+
+	for i := 0; i < 10; i++ {
+		SimulateTick(g, 3600, state)
+	}
+	q := state.Blocks["s"].Queue
+	if q < 1 {
+		t.Errorf("expected queue buildup at 90%% util, got %g", q)
 	}
 }
 

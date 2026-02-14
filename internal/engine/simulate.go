@@ -62,7 +62,16 @@ func SimulateTick(g *Graph, rps float64, state *SimState) ([]BlockResult, error)
 		bs := state.Blocks[id]
 
 		total := bs.Queue + arriving[id]
-		cap := nodeCapacity(node) * tickDt
+		rawCap := nodeCapacity(node) * tickDt
+		// Contention: as utilization rises past 60%, effective throughput drops.
+		// Models lock waits, context switches, GC pressure in real systems.
+		util := math.Min(total/rawCap, 1.0)
+		contention := 1.0
+		if util > 0.6 {
+			t := (util - 0.6) / 0.4
+			contention = 1.0 - 0.5*t*t // quadratic — gentle at 70%, steep at 90%+
+		}
+		cap := rawCap * contention
 		processed := math.Min(total, cap)
 		bs.Queue = total - processed
 
