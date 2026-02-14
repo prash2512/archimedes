@@ -73,7 +73,8 @@
     const svg = document.getElementById('connections');
     let nextId = 0;
     const edges = [];
-    let selected = null;
+    let selected = null;      // selected block (for connecting or deleting)
+    let selectedEdge = null;  // selected edge (for deleting)
 
     // Sidebar drag
     document.getElementById('toolbox').addEventListener('dragstart', (e) => {
@@ -94,17 +95,28 @@
         addBlock(data.kind, data.name, e.clientX - rect.left, e.clientY - rect.top);
     });
 
-    // Click on canvas background deselects
+    // Click on canvas background deselects everything
     canvas.addEventListener('click', (e) => {
-        if (e.target === canvas) deselect();
+        if (e.target === canvas) { deselect(); deselectEdge(); }
     });
 
-    // Cmd/Ctrl+Z undoes the last connection
     document.addEventListener('keydown', (e) => {
+        // Cmd/Ctrl+Z undoes last connection
         if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
             e.preventDefault();
             const edge = edges.pop();
-            if (edge) { edge.pipe.remove(); edge.flow.remove(); }
+            if (edge) removeEdgeDOM(edge);
+            return;
+        }
+        // Delete/Backspace removes selected edge or block
+        if (e.key === 'Backspace' || e.key === 'Delete') {
+            e.preventDefault();
+            if (selectedEdge) {
+                deleteEdge(selectedEdge);
+                selectedEdge = null;
+            } else if (selected) {
+                deleteBlock(selected);
+            }
         }
     });
 
@@ -147,6 +159,7 @@
     }
 
     function handleClick(el) {
+        deselectEdge();
         if (!selected) {
             selected = el;
             el.style.outline = '2px solid rgba(96, 165, 250, 0.6)';
@@ -170,6 +183,13 @@
     function connect(from, to) {
         if (edges.some(e => e.from === from && e.to === to)) return;
 
+        // Hit area — invisible thick line for easy clicking
+        const hit = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        hit.setAttribute('stroke', 'transparent');
+        hit.setAttribute('stroke-width', '14');
+        hit.setAttribute('pointer-events', 'stroke');
+        hit.style.cursor = 'pointer';
+
         // Background pipe
         const pipe = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         pipe.setAttribute('stroke', '#3b82f6');
@@ -188,9 +208,69 @@
 
         svg.appendChild(pipe);
         svg.appendChild(flow);
-        const edge = { from, to, pipe, flow };
+        svg.appendChild(hit);
+        const edge = { from, to, pipe, flow, hit };
         edges.push(edge);
         drawEdge(edge);
+
+        hit.addEventListener('click', () => {
+            deselect();
+            deselectEdge();
+            selectedEdge = edge;
+            const a = { x: +pipe.getAttribute('x1'), y: +pipe.getAttribute('y1') };
+            const b = { x: +pipe.getAttribute('x2'), y: +pipe.getAttribute('y2') };
+            edge.handles = [a, b].map(p => {
+                const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                c.setAttribute('cx', p.x);
+                c.setAttribute('cy', p.y);
+                c.setAttribute('r', '4');
+                c.setAttribute('fill', '#ef4444');
+                c.setAttribute('stroke', '#7f1d1d');
+                c.setAttribute('stroke-width', '1');
+                svg.appendChild(c);
+                return c;
+            });
+            flow.setAttribute('stroke-opacity', '1');
+        });
+    }
+
+    function deselectEdge() {
+        if (selectedEdge) {
+            if (selectedEdge.handles) {
+                selectedEdge.handles.forEach(h => h.remove());
+                selectedEdge.handles = null;
+            }
+            selectedEdge.flow.setAttribute('stroke-opacity', '0.8');
+        }
+        selectedEdge = null;
+    }
+
+    function removeEdgeDOM(edge) {
+        edge.pipe.remove();
+        edge.flow.remove();
+        edge.hit.remove();
+        if (edge.handles) {
+            edge.handles.forEach(h => h.remove());
+            edge.handles = null;
+        }
+    }
+
+    function deleteEdge(edge) {
+        const idx = edges.indexOf(edge);
+        if (idx !== -1) edges.splice(idx, 1);
+        removeEdgeDOM(edge);
+    }
+
+    function deleteBlock(el) {
+        // Remove all edges connected to this block
+        for (let i = edges.length - 1; i >= 0; i--) {
+            if (edges[i].from === el || edges[i].to === el) {
+                removeEdgeDOM(edges[i]);
+                edges.splice(i, 1);
+            }
+        }
+        deselect();
+        el.remove();
     }
 
     function blockCenter(el) {
@@ -209,7 +289,7 @@
         const fc = blockCenter(edge.from), tc = blockCenter(edge.to);
         const a = edgePoint(fc, tc, edge.from.offsetWidth / 2, edge.from.offsetHeight / 2);
         const b = edgePoint(tc, fc, edge.to.offsetWidth / 2, edge.to.offsetHeight / 2);
-        for (const el of [edge.pipe, edge.flow]) {
+        for (const el of [edge.pipe, edge.flow, edge.hit]) {
             el.setAttribute('x1', a.x); el.setAttribute('y1', a.y);
             el.setAttribute('x2', b.x); el.setAttribute('y2', b.y);
         }
