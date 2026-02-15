@@ -7,60 +7,137 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <style>
-        @keyframes pipe-flow {
-            to { stroke-dashoffset: -24; }
+        @keyframes dash-flow {
+            to { stroke-dashoffset: -10; }
         }
-        .edge-flow {
-            animation: pipe-flow 0.6s linear infinite;
+        .edge-line {
+            transition: stroke 0.2s ease, stroke-opacity 0.2s ease;
+        }
+        .edge-flowing {
+            animation: dash-flow linear infinite;
+        }
+        .gauge-fill {
+            transition: width 0.15s ease, background-color 0.15s ease;
+        }
+        .block-node {
+            transition: box-shadow 0.2s ease, border-color 0.2s ease;
+        }
+        .block-node[data-health="green"] {
+            border-color: #22c55e;
+            box-shadow: 0 0 8px rgba(34, 197, 94, 0.15);
+        }
+        .block-node[data-health="yellow"] {
+            border-color: #eab308;
+            box-shadow: 0 0 12px rgba(234, 179, 8, 0.2);
+        }
+        .block-node[data-health="red"] {
+            border-color: #ef4444;
+            box-shadow: 0 0 16px rgba(239, 68, 68, 0.3);
+        }
+        .sidebar-block:hover { transform: translateX(2px); }
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            height: 4px;
+            border-radius: 2px;
+            background: #374151;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            border: 2px solid #1e3a5f;
         }
     </style>
 </head>
 <body class="bg-gray-950 text-gray-100 h-screen flex flex-col overflow-hidden">
 
     <!-- Top bar -->
-    <header class="h-12 bg-gray-900 border-b border-gray-800 flex items-center px-4 gap-4">
-        <span class="text-sm font-semibold tracking-wide">Archimedes</span>
-        <button id="play-btn"
-                class="w-8 h-8 flex items-center justify-center rounded bg-gray-800 hover:bg-gray-700 transition-colors"
-                title="Play / Pause">
-            <svg id="play-icon" class="w-4 h-4 text-green-400" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
-            <svg id="pause-icon" class="w-4 h-4 text-yellow-400 hidden" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="3" width="4" height="18"/><rect x="15" y="3" width="4" height="18"/></svg>
-        </button>
-        <span class="text-xs text-gray-500">Tick <span id="tick-counter" class="text-gray-400 tabular-nums">0</span></span>
+    <header class="h-11 bg-gray-900 border-b border-gray-800 flex items-center px-4 gap-3 shrink-0">
+        <span class="text-sm font-semibold tracking-wide text-gray-200">Archimedes</span>
+        <span class="text-[10px] text-gray-600 hidden sm:inline">System Design Playground</span>
+        <div class="ml-auto flex items-center gap-3">
+            <button id="play-btn"
+                    class="w-9 h-9 flex items-center justify-center rounded-full bg-gray-800 hover:bg-gray-700 transition-colors border border-gray-700"
+                    title="Play / Pause">
+                <svg id="play-icon" class="w-4 h-4 text-green-400 ml-0.5" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg>
+                <svg id="pause-icon" class="w-4 h-4 text-yellow-400 hidden" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="3" width="4" height="18"/><rect x="15" y="3" width="4" height="18"/></svg>
+            </button>
+            <div class="text-xs text-gray-500 tabular-nums">
+                Tick <span id="tick-counter" class="text-gray-300 font-medium">0</span>
+            </div>
+        </div>
     </header>
 
     <div class="flex flex-1 overflow-hidden">
 
-        <!-- Toolbox sidebar -->
-        <aside class="w-56 bg-gray-900 border-r border-gray-800 p-3 flex flex-col gap-2 overflow-y-auto">
-            <span class="text-xs text-gray-500 uppercase tracking-wider mb-1">Blocks</span>
-            <div id="toolbox" hx-get="/api/blocks/html" hx-trigger="load" hx-swap="innerHTML">
+        <!-- Sidebar -->
+        <aside class="w-52 bg-gray-900/80 border-r border-gray-800 flex flex-col overflow-y-auto shrink-0">
+
+            <!-- Block categories -->
+            <div class="p-3 pb-0">
+                <div class="text-[10px] text-gray-500 uppercase tracking-widest mb-2 font-medium">Components</div>
+            </div>
+            <div id="toolbox" class="px-3 flex flex-col gap-0.5">
+                <!-- Filled by HTMX -->
             </div>
 
-            <div class="border-t border-gray-800 pt-3 mt-3">
-                <span class="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Load</span>
-                <label class="text-xs text-gray-400 flex justify-between">
-                    <span>RPS</span>
-                    <span id="rps-value">1,000</span>
-                </label>
-                <input type="range" id="rps-slider" min="0" max="100000" value="1000" step="100"
-                       class="w-full mt-1 accent-blue-500">
+            <!-- Controls -->
+            <div class="mt-auto border-t border-gray-800 p-3 flex flex-col gap-3">
+                <div class="text-[10px] text-gray-500 uppercase tracking-widest font-medium">Load</div>
+
+                <div>
+                    <div class="flex justify-between text-[11px] mb-1.5">
+                        <span class="text-gray-500">Requests / sec</span>
+                        <span id="rps-value" class="text-gray-300 font-medium tabular-nums">1,000</span>
+                    </div>
+                    <input type="range" id="rps-slider" min="0" max="100000" value="1000" step="100"
+                           class="w-full">
+                </div>
+
+                <div>
+                    <div class="flex justify-between text-[11px] mb-1.5">
+                        <span class="text-gray-500">Read / Write</span>
+                        <span id="rw-value" class="text-gray-300 font-medium tabular-nums">70 / 30</span>
+                    </div>
+                    <input type="range" id="rw-slider" min="0" max="100" value="70" step="5"
+                           class="w-full">
+                </div>
+            </div>
+
+            <!-- Stats -->
+            <div class="border-t border-gray-800 p-3">
+                <div class="text-[10px] text-gray-500 uppercase tracking-widest font-medium mb-2">System</div>
+                <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
+                    <span class="text-gray-500">Throughput</span>
+                    <span id="stat-throughput" class="text-gray-300 tabular-nums text-right">-</span>
+                    <span class="text-gray-500">Healthy</span>
+                    <span id="stat-healthy" class="text-green-400 tabular-nums text-right">-</span>
+                    <span class="text-gray-500">Degraded</span>
+                    <span id="stat-degraded" class="text-yellow-400 tabular-nums text-right">-</span>
+                    <span class="text-gray-500">Failing</span>
+                    <span id="stat-failing" class="text-red-400 tabular-nums text-right">-</span>
+                </div>
             </div>
         </aside>
 
         <!-- Canvas -->
         <main id="canvas" class="flex-1 relative overflow-hidden"
-              style="background-color: #030712; background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px); background-size: 24px 24px;">
+              style="background-color: #0a0f1a; background-image: radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px); background-size: 20px 20px;">
             <svg id="connections" class="absolute inset-0 w-full h-full" style="pointer-events: none;">
                 <defs>
-                    <marker id="arrow-blue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-                        <polygon points="0 0, 8 3, 0 6" fill="#3b82f6" opacity="0.7" />
+                    <marker id="arrow-blue" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                        <path d="M 0 0.5 L 5 3 L 0 5.5" fill="none" stroke="#3b82f6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                     </marker>
-                    <marker id="arrow-amber" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-                        <polygon points="0 0, 8 3, 0 6" fill="#f59e0b" opacity="0.7" />
+                    <marker id="arrow-amber" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                        <path d="M 0 0.5 L 5 3 L 0 5.5" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                     </marker>
-                    <marker id="arrow-red" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-                        <polygon points="0 0, 8 3, 0 6" fill="#ef4444" opacity="0.7" />
+                    <marker id="arrow-red" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                        <path d="M 0 0.5 L 5 3 L 0 5.5" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                     </marker>
                 </defs>
             </svg>
@@ -69,12 +146,47 @@
     </div>
 
     <script>
+    // --- Category config for sidebar grouping and block accent colors ---
+    const categories = {
+        traffic:  { label: 'Traffic',  color: '#6366f1', kinds: ['user', 'load_balancer', 'api_gateway'] },
+        compute:  { label: 'Compute',  color: '#3b82f6', kinds: ['service'] },
+        storage:  { label: 'Storage',  color: '#10b981', kinds: ['sql_datastore', 'redis', 'elasticsearch'] },
+        queue:    { label: 'Queue',    color: '#f59e0b', kinds: ['kafka'] },
+    };
+    const kindToCategory = {};
+    const kindToColor = {};
+    for (const [, cat] of Object.entries(categories)) {
+        for (const k of cat.kinds) { kindToCategory[k] = cat; kindToColor[k] = cat.color; }
+    }
+
+    // --- Sidebar: fetch blocks and render grouped ---
+    fetch('/api/blocks').then(r => r.json()).then(blockTypes => {
+        const toolbox = document.getElementById('toolbox');
+        for (const [, cat] of Object.entries(categories)) {
+            const header = document.createElement('div');
+            header.className = 'text-[10px] text-gray-600 uppercase tracking-wider mt-2 mb-0.5 px-1 font-medium';
+            header.style.color = cat.color;
+            header.textContent = cat.label;
+            toolbox.appendChild(header);
+
+            for (const bt of blockTypes.filter(b => cat.kinds.includes(b.kind))) {
+                const el = document.createElement('div');
+                el.draggable = true;
+                el.dataset.kind = bt.kind;
+                el.dataset.name = bt.name;
+                el.className = 'sidebar-block flex items-center gap-2 px-2 py-1.5 rounded text-xs cursor-grab hover:bg-gray-800/80 transition-all select-none text-gray-400';
+                el.innerHTML = `<img src="/static/icons/${bt.kind}.svg" class="w-3.5 h-3.5 invert opacity-60" draggable="false"><span>${bt.name}</span>`;
+                toolbox.appendChild(el);
+            }
+        }
+    });
+
     const canvas = document.getElementById('canvas');
     const svg = document.getElementById('connections');
     let nextId = 0;
     const edges = [];
-    let selected = null;      // selected block (for connecting or deleting)
-    let selectedEdge = null;  // selected edge (for deleting)
+    let selected = null;
+    let selectedEdge = null;
 
     // Sidebar drag
     document.getElementById('toolbox').addEventListener('dragstart', (e) => {
@@ -95,20 +207,17 @@
         addBlock(data.kind, data.name, e.clientX - rect.left, e.clientY - rect.top);
     });
 
-    // Click on canvas background deselects everything
     canvas.addEventListener('click', (e) => {
         if (e.target === canvas) { deselect(); deselectEdge(); }
     });
 
     document.addEventListener('keydown', (e) => {
-        // Cmd/Ctrl+Z undoes last connection
         if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
             e.preventDefault();
             const edge = edges.pop();
             if (edge) removeEdgeDOM(edge);
             return;
         }
-        // Delete/Backspace removes selected edge or block
         if (e.key === 'Backspace' || e.key === 'Delete') {
             e.preventDefault();
             if (selectedEdge) {
@@ -121,18 +230,35 @@
     });
 
     function addBlock(kind, name, x, y) {
+        const accent = kindToColor[kind] || '#6b7280';
         const el = document.createElement('div');
         el.id = 'block-' + (++nextId);
         el.dataset.kind = kind;
-        el.className = 'absolute flex flex-col px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm select-none cursor-move hover:border-gray-500 transition-colors';
-        el.style.left = (x - 60) + 'px';
-        el.style.top = (y - 16) + 'px';
-        el.innerHTML = `<div class="flex items-center gap-2"><img src="/static/icons/${kind}.svg" class="w-4 h-4 invert opacity-70"><span>${name}</span></div>`;
+        el.className = 'block-node absolute flex flex-col items-center rounded-lg border border-gray-700 select-none cursor-move bg-gray-900/90 backdrop-blur-sm';
+        el.style.left = (x - 56) + 'px';
+        el.style.top = (y - 36) + 'px';
+        el.style.width = '112px';
+
+        el.innerHTML = `
+            <div class="w-full h-1 rounded-t-lg" style="background:${accent}"></div>
+            <div class="flex flex-col items-center py-2 px-2 w-full">
+                <img src="/static/icons/${kind}.svg" class="w-6 h-6 invert opacity-80 mb-1" draggable="false">
+                <span class="text-[11px] text-gray-300 font-medium leading-tight">${name}</span>
+                <div class="gauges w-full mt-1.5 flex flex-col gap-0.5 ${kind === 'user' ? 'hidden' : ''}"></div>
+                <div class="queue-bar w-full mt-1 hidden">
+                    <div class="flex justify-between text-[9px] mb-0.5">
+                        <span class="text-gray-600">Queue</span>
+                        <span class="queue-val text-orange-400 tabular-nums">0</span>
+                    </div>
+                    <div class="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
+                        <div class="queue-fill h-full bg-orange-500/60 rounded-full transition-all" style="width:0%"></div>
+                    </div>
+                </div>
+            </div>`;
         el.addEventListener('mousedown', onMouseDown);
         canvas.appendChild(el);
     }
 
-    // Combined drag + click: small moves are clicks, larger moves are drags
     function onMouseDown(e) {
         if (e.button !== 0) return;
         e.preventDefault();
@@ -162,8 +288,8 @@
         deselectEdge();
         if (!selected) {
             selected = el;
-            el.style.outline = '2px solid rgba(96, 165, 250, 0.6)';
-            el.style.outlineOffset = '2px';
+            el.style.outline = '2px solid rgba(96, 165, 250, 0.5)';
+            el.style.outlineOffset = '3px';
         } else if (selected === el) {
             deselect();
         } else {
@@ -183,33 +309,24 @@
     function connect(from, to) {
         if (edges.some(e => e.from === from && e.to === to)) return;
 
-        // Hit area — invisible thick line for easy clicking
         const hit = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         hit.setAttribute('stroke', 'transparent');
-        hit.setAttribute('stroke-width', '14');
+        hit.setAttribute('stroke-width', '16');
         hit.setAttribute('pointer-events', 'stroke');
         hit.style.cursor = 'pointer';
 
-        // Background pipe
-        const pipe = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        pipe.setAttribute('stroke', '#3b82f6');
-        pipe.setAttribute('stroke-width', '2');
-        pipe.setAttribute('stroke-opacity', '0.15');
-        pipe.setAttribute('stroke-linecap', 'round');
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.classList.add('edge-line');
+        line.setAttribute('stroke', '#3b82f6');
+        line.setAttribute('stroke-width', '2');
+        line.setAttribute('stroke-opacity', '0.6');
+        line.setAttribute('stroke-linecap', 'round');
+        line.setAttribute('stroke-dasharray', '6 4');
+        line.setAttribute('marker-end', 'url(#arrow-blue)');
 
-        // Animated flow layer
-        const flow = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        flow.setAttribute('stroke', '#3b82f6');
-        flow.setAttribute('stroke-width', '2');
-        flow.setAttribute('stroke-opacity', '0.8');
-        flow.setAttribute('stroke-linecap', 'round');
-        flow.setAttribute('stroke-dasharray', '6 18');
-        flow.setAttribute('marker-end', 'url(#arrow-blue)');
-
-        svg.appendChild(pipe);
-        svg.appendChild(flow);
+        svg.appendChild(line);
         svg.appendChild(hit);
-        const edge = { from, to, pipe, flow, hit };
+        const edge = { from, to, line, hit };
         edges.push(edge);
         drawEdge(edge);
 
@@ -217,20 +334,20 @@
             deselect();
             deselectEdge();
             selectedEdge = edge;
-            const a = { x: +pipe.getAttribute('x1'), y: +pipe.getAttribute('y1') };
-            const b = { x: +pipe.getAttribute('x2'), y: +pipe.getAttribute('y2') };
+            const a = { x: +line.getAttribute('x1'), y: +line.getAttribute('y1') };
+            const b = { x: +line.getAttribute('x2'), y: +line.getAttribute('y2') };
             edge.handles = [a, b].map(p => {
                 const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
                 c.setAttribute('cx', p.x);
                 c.setAttribute('cy', p.y);
-                c.setAttribute('r', '4');
+                c.setAttribute('r', '5');
                 c.setAttribute('fill', '#ef4444');
                 c.setAttribute('stroke', '#7f1d1d');
-                c.setAttribute('stroke-width', '1');
+                c.setAttribute('stroke-width', '1.5');
                 svg.appendChild(c);
                 return c;
             });
-            flow.setAttribute('stroke-opacity', '1');
+            line.setAttribute('stroke-opacity', '1');
         });
     }
 
@@ -240,14 +357,13 @@
                 selectedEdge.handles.forEach(h => h.remove());
                 selectedEdge.handles = null;
             }
-            selectedEdge.flow.setAttribute('stroke-opacity', '0.8');
+            selectedEdge.line.setAttribute('stroke-opacity', '0.6');
         }
         selectedEdge = null;
     }
 
     function removeEdgeDOM(edge) {
-        edge.pipe.remove();
-        edge.flow.remove();
+        edge.line.remove();
         edge.hit.remove();
         if (edge.handles) {
             edge.handles.forEach(h => h.remove());
@@ -262,7 +378,6 @@
     }
 
     function deleteBlock(el) {
-        // Remove all edges connected to this block
         for (let i = edges.length - 1; i >= 0; i--) {
             if (edges[i].from === el || edges[i].to === el) {
                 removeEdgeDOM(edges[i]);
@@ -277,7 +392,6 @@
         return { x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + el.offsetHeight / 2 };
     }
 
-    // Line endpoint at the block's rectangular border, not its center
     function edgePoint(center, target, hw, hh) {
         const dx = target.x - center.x, dy = target.y - center.y;
         if (dx === 0 && dy === 0) return { ...center };
@@ -289,7 +403,7 @@
         const fc = blockCenter(edge.from), tc = blockCenter(edge.to);
         const a = edgePoint(fc, tc, edge.from.offsetWidth / 2, edge.from.offsetHeight / 2);
         const b = edgePoint(tc, fc, edge.to.offsetWidth / 2, edge.to.offsetHeight / 2);
-        for (const el of [edge.pipe, edge.flow, edge.hit]) {
+        for (const el of [edge.line, edge.hit]) {
             el.setAttribute('x1', a.x); el.setAttribute('y1', a.y);
             el.setAttribute('x2', b.x); el.setAttribute('y2', b.y);
         }
@@ -301,7 +415,7 @@
         }
     }
 
-    // RPS slider — live update while playing
+    // --- Controls ---
     const rpsSlider = document.getElementById('rps-slider');
     const rpsValue = document.getElementById('rps-value');
     rpsSlider.addEventListener('input', () => {
@@ -315,7 +429,14 @@
         }
     });
 
-    // Play / Pause
+    const rwSlider = document.getElementById('rw-slider');
+    const rwValue = document.getElementById('rw-value');
+    rwSlider.addEventListener('input', () => {
+        const r = parseInt(rwSlider.value);
+        rwValue.textContent = `${r} / ${100 - r}`;
+    });
+
+    // --- Play / Pause ---
     let playing = false;
     let evtSource = null;
     const playBtn = document.getElementById('play-btn');
@@ -352,6 +473,7 @@
             tickCounter.textContent = data.tick;
             applyResults(data.blocks);
             applyEdgeResults(data.blocks);
+            updateStats(data.blocks);
             if (data.done) stopPlayback();
         };
 
@@ -365,7 +487,6 @@
         pauseIcon.classList.add('hidden');
         playIcon.classList.remove('hidden');
         await fetch('/api/pause', { method: 'POST' });
-        // EventSource stays open — drain animation plays until done:true
     }
 
     function stopPlayback() {
@@ -376,7 +497,8 @@
         clearEdgeResults();
     }
 
-    const pipeColors = { green: '#3b82f6', yellow: '#f59e0b', red: '#ef4444' };
+    // --- Edge visualization ---
+    const edgeColors = { green: '#3b82f6', yellow: '#f59e0b', red: '#ef4444' };
     const arrowIds = { green: 'arrow-blue', yellow: 'arrow-amber', red: 'arrow-red' };
 
     function applyEdgeResults(blockResults) {
@@ -389,43 +511,40 @@
             if (!src) continue;
 
             const health = (dst && dst.health) || 'green';
-            const color = pipeColors[health];
             const rps = dst ? dst.rps : (src.rps || 0);
 
-            edge.pipe.setAttribute('stroke', color);
-            edge.flow.setAttribute('stroke', color);
-            edge.flow.setAttribute('marker-end', `url(#${arrowIds[health]})`);
+            edge.line.setAttribute('stroke', edgeColors[health]);
+            edge.line.setAttribute('marker-end', `url(#${arrowIds[health]})`);
+            edge.line.setAttribute('stroke-opacity', '0.8');
 
             if (rps > 0) {
-                edge.flow.classList.add('edge-flow');
-                const speed = Math.max(0.15, 0.6 - (rps / 20000));
-                edge.flow.style.animationDuration = speed + 's';
+                edge.line.classList.add('edge-flowing');
+                const logRps = Math.pow(Math.log10(Math.max(rps, 10)), 2);
+                const speed = Math.max(0.08, 3 / logRps);
+                edge.line.style.animationDuration = speed + 's';
             } else {
-                edge.flow.classList.remove('edge-flow');
+                edge.line.classList.remove('edge-flowing');
+                edge.line.style.animationDuration = '';
             }
         }
     }
 
     function clearEdgeResults() {
         for (const edge of edges) {
-            edge.pipe.setAttribute('stroke', '#3b82f6');
-            edge.flow.setAttribute('stroke', '#3b82f6');
-            edge.flow.setAttribute('marker-end', 'url(#arrow-blue)');
-            edge.flow.classList.remove('edge-flow');
-            edge.flow.style.animationDuration = '';
+            edge.line.setAttribute('stroke', '#3b82f6');
+            edge.line.setAttribute('marker-end', 'url(#arrow-blue)');
+            edge.line.setAttribute('stroke-opacity', '0.6');
+            edge.line.setAttribute('stroke-width', '2');
+            edge.line.classList.remove('edge-flowing');
+            edge.line.style.animationDuration = '';
         }
     }
 
-    const healthColors = {
-        green: { border: 'border-green-500', text: 'text-green-400' },
-        yellow: { border: 'border-yellow-500', text: 'text-yellow-400' },
-        red: { border: 'border-red-500', text: 'text-red-400' },
-    };
-
-    function utilColor(v) {
-        if (v < 0.6) return 'text-green-400';
-        if (v < 0.9) return 'text-yellow-400';
-        return 'text-red-400';
+    // --- Block visualization ---
+    function gaugeColor(v) {
+        if (v < 0.6) return '#22c55e';
+        if (v < 0.9) return '#eab308';
+        return '#ef4444';
     }
 
     function applyResults(blockResults) {
@@ -433,37 +552,72 @@
             const el = document.getElementById(b.id);
             if (!el) continue;
 
-            el.classList.remove('border-gray-700', 'border-green-500', 'border-yellow-500', 'border-red-500');
-            const colors = healthColors[b.health];
-            el.classList.add(colors ? colors.border : 'border-gray-700');
+            // Health glow
+            el.dataset.health = b.health;
 
-            let row = el.querySelector('.util-row');
-            if (!row) {
-                row = document.createElement('div');
-                row.className = 'util-row flex gap-2 text-xs mt-1';
-                el.appendChild(row);
-            }
-            const metrics = [
-                { label: 'CPU', val: b.cpu_util },
-                { label: 'Mem', val: b.mem_util },
-                { label: 'Disk', val: b.disk_util },
-            ];
-            row.innerHTML = metrics.map(m =>
-                `<span class="${utilColor(m.val)}"><span class="text-gray-500">${m.label}</span> ${Math.round(m.val * 100)}%</span>`
-            ).join('');
+            // Gauge bars (skip for user blocks)
+            if (el.dataset.kind !== 'user') {
+                const gauges = el.querySelector('.gauges');
+                const metrics = [
+                    { key: 'cpu', label: 'CPU', val: b.cpu_util },
+                    { key: 'mem', label: 'Mem', val: b.mem_util },
+                    { key: 'disk', label: 'Disk', val: b.disk_util },
+                ];
 
-            let qRow = el.querySelector('.queue-row');
-            if (b.queue_depth > 0.5) {
-                if (!qRow) {
-                    qRow = document.createElement('div');
-                    qRow.className = 'queue-row text-xs mt-0.5';
-                    el.appendChild(qRow);
+                if (!gauges.dataset.init) {
+                    gauges.dataset.init = '1';
+                    gauges.innerHTML = metrics.map(m => `
+                        <div class="flex items-center gap-1" data-gauge="${m.key}">
+                            <span class="text-[8px] text-gray-600 w-5 shrink-0">${m.label}</span>
+                            <div class="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+                                <div class="gauge-fill h-full rounded-full" style="width:0%"></div>
+                            </div>
+                            <span class="gauge-pct text-[8px] text-gray-500 w-6 text-right tabular-nums"></span>
+                        </div>
+                    `).join('');
                 }
-                qRow.innerHTML = `<span class="text-orange-400"><span class="text-gray-500">Queue</span> ${Math.round(b.queue_depth).toLocaleString()}</span>`;
-            } else if (qRow) {
-                qRow.remove();
+
+                for (const m of metrics) {
+                    const row = gauges.querySelector(`[data-gauge="${m.key}"]`);
+                    const fill = row.querySelector('.gauge-fill');
+                    const pct = row.querySelector('.gauge-pct');
+                    const p = Math.min(m.val * 100, 100);
+                    fill.style.width = p + '%';
+                    fill.style.backgroundColor = gaugeColor(m.val);
+                    pct.textContent = Math.round(m.val * 100) + '%';
+                    pct.style.color = gaugeColor(m.val);
+                }
+            }
+
+            // Queue depth
+            const qBar = el.querySelector('.queue-bar');
+            const qVal = el.querySelector('.queue-val');
+            const qFill = el.querySelector('.queue-fill');
+            if (b.queue_depth > 0.5) {
+                qBar.classList.remove('hidden');
+                qVal.textContent = Math.round(b.queue_depth).toLocaleString();
+                const qPct = Math.min(b.queue_depth / 5000 * 100, 100);
+                qFill.style.width = qPct + '%';
+            } else {
+                qBar.classList.add('hidden');
             }
         }
+    }
+
+    // --- Aggregate stats ---
+    function updateStats(blockResults) {
+        const real = blockResults.filter(b => b.kind !== 'user');
+        let throughput = 0, green = 0, yellow = 0, red = 0;
+        for (const b of real) {
+            throughput += b.rps;
+            if (b.health === 'green') green++;
+            else if (b.health === 'yellow') yellow++;
+            else red++;
+        }
+        document.getElementById('stat-throughput').textContent = Math.round(throughput).toLocaleString();
+        document.getElementById('stat-healthy').textContent = green;
+        document.getElementById('stat-degraded').textContent = yellow;
+        document.getElementById('stat-failing').textContent = red;
     }
     </script>
 
