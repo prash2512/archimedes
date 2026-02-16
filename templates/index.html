@@ -556,26 +556,37 @@
         return '#ef4444';
     }
 
+    // Block-specific ticker gauges: shown below CPU/Mem/Disk
+    const tickerGauges = {
+        sql_datastore: [{ key: 'conn_pool_util', label: 'Pool' }],
+        redis:         [{ key: 'memory_pct',     label: 'Data' }],
+        service:       [{ key: 'goroutine_util', label: 'Grtn' }],
+        worker:        [{ key: 'thread_pool_util', label: 'Thrd' }],
+        analytics:     [{ key: 'query_pool_util',  label: 'Qry' }],
+    };
+
     function applyResults(blockResults) {
         for (const b of blockResults) {
             const el = document.getElementById(b.id);
             if (!el) continue;
 
-            // Health glow
             el.dataset.health = b.health;
 
-            // Gauge bars (skip for user blocks)
             if (el.dataset.kind !== 'user') {
                 const gauges = el.querySelector('.gauges');
-                const metrics = [
+                const base = [
                     { key: 'cpu', label: 'CPU', val: b.cpu_util },
                     { key: 'mem', label: 'Mem', val: b.mem_util },
                     { key: 'disk', label: 'Disk', val: b.disk_util },
                 ];
+                const extra = (tickerGauges[el.dataset.kind] || []).map(g => ({
+                    ...g, val: (b.metrics && b.metrics[g.key]) || 0
+                }));
+                const all = base.concat(extra);
 
                 if (!gauges.dataset.init) {
                     gauges.dataset.init = '1';
-                    gauges.innerHTML = metrics.map(m => `
+                    gauges.innerHTML = all.map(m => `
                         <div class="flex items-center gap-1" data-gauge="${m.key}">
                             <span class="text-[8px] text-gray-600 w-5 shrink-0">${m.label}</span>
                             <div class="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
@@ -586,8 +597,9 @@
                     `).join('');
                 }
 
-                for (const m of metrics) {
+                for (const m of all) {
                     const row = gauges.querySelector(`[data-gauge="${m.key}"]`);
+                    if (!row) continue;
                     const fill = row.querySelector('.gauge-fill');
                     const pct = row.querySelector('.gauge-pct');
                     const p = Math.min(m.val * 100, 100);
