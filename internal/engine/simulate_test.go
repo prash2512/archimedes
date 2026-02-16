@@ -318,6 +318,44 @@ func TestSimulateTickWriteHeavy(t *testing.T) {
 	}
 }
 
+func TestRedisMemoryGrowsWithWrites(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{{ID: "r", Kind: "redis"}},
+	})
+	state := NewSimState(g)
+
+	for range 20 {
+		SimulateTick(g, 80000, 0.0, state) // all writes
+	}
+
+	used := state.Blocks["r"].Extra["memory_used_mb"]
+	if used < 1 {
+		t.Errorf("redis memory should grow with writes, got %g MB", used)
+	}
+}
+
+func TestRedisEvictionReducesCapacity(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{{ID: "r", Kind: "redis"}},
+	})
+	state := NewSimState(g)
+
+	// Pre-fill memory past eviction threshold (80% of 16384 = ~13107 MB)
+	state.Blocks["r"].Extra["memory_used_mb"] = 15000
+
+	results, _ := SimulateTick(g, 50000, 0.0, state)
+	for _, r := range results {
+		if r.ID == "r" {
+			if r.Metrics["evicting"] != 1 {
+				t.Error("redis should be evicting above 80% memory")
+			}
+			if r.Metrics["memory_pct"] < 0.8 {
+				t.Errorf("memory_pct should be above 0.8, got %g", r.Metrics["memory_pct"])
+			}
+		}
+	}
+}
+
 func TestSQLConnPoolWriteHeavy(t *testing.T) {
 	// Write-heavy load fills the conn pool faster (12ms hold vs 2ms for reads).
 	// At 5000 write RPS: write_conns = 5000*0.012 = 60, pool_util = 60%
