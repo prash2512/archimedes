@@ -318,6 +318,48 @@ func TestSimulateTickWriteHeavy(t *testing.T) {
 	}
 }
 
+func TestSQLConnPoolWriteHeavy(t *testing.T) {
+	// Write-heavy load fills the conn pool faster (12ms hold vs 2ms for reads).
+	// At 5000 write RPS: write_conns = 5000*0.012 = 60, pool_util = 60%
+	// At 5000 read RPS:  read_conns  = 5000*0.002 = 10, pool_util = 10%
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{{ID: "db", Kind: "sql_datastore"}},
+	})
+
+	writeState := NewSimState(g)
+	readState := NewSimState(g)
+
+	for range 5 {
+		SimulateTick(g, 5000, 0.0, writeState)
+		SimulateTick(g, 5000, 1.0, readState)
+	}
+
+	wPool := writeState.Blocks["db"].Extra["active_conns"]
+	rPool := readState.Blocks["db"].Extra["active_conns"]
+	if wPool <= rPool {
+		t.Errorf("write-heavy should use more conns: write=%g read=%g", wPool, rPool)
+	}
+}
+
+func TestSQLConnPoolSaturation(t *testing.T) {
+	// At very high write RPS the pool should saturate (active_conns → maxConns=100).
+	// 100/0.012 ≈ 8333 write RPS to fill pool.
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{{ID: "db", Kind: "sql_datastore"}},
+	})
+	state := NewSimState(g)
+
+	for range 5 {
+		results, _ := SimulateTick(g, 10000, 0.0, state)
+		_ = results
+	}
+
+	active := state.Blocks["db"].Extra["active_conns"]
+	if active < 95 {
+		t.Errorf("conn pool should be near-full at 10k write RPS, got %g active", active)
+	}
+}
+
 func mustGraph(t *testing.T, topo Topology) *Graph {
 	t.Helper()
 	g, err := BuildGraph(topo)

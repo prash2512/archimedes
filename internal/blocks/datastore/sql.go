@@ -1,12 +1,19 @@
 package datastore
 
-import "github.com/prashanth/archimedes/internal/blocks"
+import (
+	"math"
+
+	"github.com/prashanth/archimedes/internal/blocks"
+)
 
 const (
 	bTreeReadIOs  = 2
 	bTreeWriteIOs = 10
 	bufferPool    = 0.75
 	maxConns      = 100
+
+	readHoldSec  = 0.002 // 2ms — quick lookup, buffer pool hit
+	writeHoldSec = 0.012 // 12ms — lock, WAL, fsync
 )
 
 type SQL struct{}
@@ -25,6 +32,37 @@ func (SQL) Profile() blocks.Profile {
 		BufferPoolRatio: bufferPool,
 		Durability:      blocks.DurabilityPerWrite,
 	}
+}
+
+func (SQL) InitState(state map[string]float64) {
+	state["active_conns"] = 0
+}
+
+// Connection pool: reads and writes hold connections for different durations.
+// Write-heavy loads fill the pool much faster (12ms vs 2ms hold).
+func (SQL) Tick(ctx blocks.TickContext) blocks.TickEffect {
+	readRPS := ctx.Reads / ctx.Dt
+	writeRPS := ctx.Writes / ctx.Dt
+	readConns := readRPS * readHoldSec
+	writeConns := writeRPS * writeHoldSec
+	active := math.Min(readConns+writeConns, maxConns)
+	ctx.State["active_conns"] = active
+
+	poolUtil := active / maxConns
+	e := blocks.TickEffect{
+		CapMultiplier: 1.0,
+		Metrics:       map[string]float64{"conn_pool_util": poolUtil},
+	}
+
+	if poolUtil > 0.7 {
+		t := (poolUtil - 0.7) / 0.3
+		e.CapMultiplier = 1.0 - 0.4*t*t
+		e.Latency = writeHoldSec * 1000 * (1 + 2*t*t)
+	}
+	if poolUtil >= 0.99 {
+		e.Saturated = true
+	}
+	return e
 }
 
 func init() { blocks.Types = append(blocks.Types, SQL{}) }
