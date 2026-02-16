@@ -117,7 +117,9 @@ func TestBlockCapacity(t *testing.T) {
 		kind string
 		want float64
 	}{
-		{"service", 6666.667},
+		{"service", 6666.667},    // read: 2*1000/0.3
+		{"worker", 8000},         // read: 4*1000/0.5
+		{"analytics", 800},       // read: 8*1000/10.0
 		{"load_balancer", 100000},
 		{"api_gateway", 40000},
 		{"redis", 100000},
