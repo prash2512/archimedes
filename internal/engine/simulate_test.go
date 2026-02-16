@@ -16,7 +16,8 @@ func approx(a, b float64) bool {
 }
 
 func TestSimulateServiceCPU(t *testing.T) {
-	// Service: 2 cores, 0.5ms per op → saturates at 4000 RPS
+	// Service: 2 cores, 0.3ms per read → saturates at 6667 RPS
+	// At 1000 read RPS: cpu = 1000 * 0.3 / 2000 = 0.15
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{{ID: "s", Kind: "service"}},
 	})
@@ -25,8 +26,8 @@ func TestSimulateServiceCPU(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := results[0]
-	if !approx(r.CPUUtil, 0.25) {
-		t.Errorf("cpu_util: want 0.25, got %f", r.CPUUtil)
+	if !approx(r.CPUUtil, 0.15) {
+		t.Errorf("cpu_util: want 0.15, got %f", r.CPUUtil)
 	}
 	if r.DiskUtil != 0 {
 		t.Errorf("disk_util: want 0, got %f", r.DiskUtil)
@@ -116,7 +117,7 @@ func TestBlockCapacity(t *testing.T) {
 		kind string
 		want float64
 	}{
-		{"service", 4000},
+		{"service", 6666.667},
 		{"load_balancer", 100000},
 		{"api_gateway", 40000},
 		{"redis", 100000},
@@ -179,7 +180,7 @@ func TestSimulateTickDrains(t *testing.T) {
 }
 
 func TestSimulateTickQueueAtHighUtil(t *testing.T) {
-	// Service at 90% raw load (3600 RPS, capacity 4000) should queue
+	// Service at 90% raw load (6000 RPS, capacity 6667) should queue
 	// due to contention effects even though raw capacity isn't exceeded
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{{ID: "s", Kind: "service"}},
@@ -187,7 +188,7 @@ func TestSimulateTickQueueAtHighUtil(t *testing.T) {
 	state := NewSimState(g)
 
 	for i := 0; i < 10; i++ {
-		SimulateTick(g, 3600, 1.0, state)
+		SimulateTick(g, 6000, 1.0, state)
 	}
 	q := state.Blocks["s"].Queue
 	if q < 1 {
