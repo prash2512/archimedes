@@ -115,6 +115,9 @@ func SimulateTick(g *Graph, rps float64, readRatio float64, state *SimState) ([]
 		br.Latency = effect.Latency
 		br.Saturated = effect.Saturated
 		br.Metrics = effect.Metrics
+		if mp, ok := effect.Metrics["mem_pressure"]; ok {
+			br.MemUtil = mp
+		}
 		results = append(results, br)
 
 		for _, down := range node.outgoing {
