@@ -7,29 +7,40 @@ import (
 )
 
 type BlockResult struct {
-	ID         string  `json:"id"`
-	Kind       string  `json:"kind"`
-	RPS        float64 `json:"rps"`
-	CPUUtil    float64 `json:"cpu_util"`
-	MemUtil    float64 `json:"mem_util"`
-	DiskUtil   float64 `json:"disk_util"`
-	Bottleneck float64 `json:"bottleneck"`
-	Health     string  `json:"health"`
-	QueueDepth float64 `json:"queue_depth"`
+	ID         string             `json:"id"`
+	Kind       string             `json:"kind"`
+	RPS        float64            `json:"rps"`
+	CPUUtil    float64            `json:"cpu_util"`
+	MemUtil    float64            `json:"mem_util"`
+	DiskUtil   float64            `json:"disk_util"`
+	Bottleneck float64            `json:"bottleneck"`
+	Health     string             `json:"health"`
+	QueueDepth float64            `json:"queue_depth"`
+	Latency    float64            `json:"latency"`
+	Saturated  bool               `json:"saturated"`
+	Metrics    map[string]float64 `json:"metrics,omitempty"`
 }
 
 type BlockState struct {
 	Queue float64
+	Extra map[string]float64
 }
 
 type SimState struct {
-	Blocks map[string]*BlockState
+	Blocks      map[string]*BlockState
+	CurrentTick int
 }
 
 func NewSimState(g *Graph) *SimState {
 	s := &SimState{Blocks: make(map[string]*BlockState, len(g.nodes))}
-	for id := range g.nodes {
-		s.Blocks[id] = &BlockState{}
+	for id, node := range g.nodes {
+		bs := &BlockState{Extra: make(map[string]float64)}
+		if b, ok := blocks.ByKind(node.Kind); ok {
+			if t, ok := b.(blocks.Ticker); ok {
+				t.InitState(bs.Extra)
+			}
+		}
+		s.Blocks[id] = bs
 	}
 	return s
 }
@@ -56,6 +67,8 @@ func SimulateTick(g *Graph, rps float64, readRatio float64, state *SimState) ([]
 		arriving[src.ID] = rps * tickDt
 	}
 
+	state.CurrentTick++
+
 	results := make([]BlockResult, 0, len(order))
 	for _, id := range order {
 		node := g.nodes[id]
@@ -63,6 +76,27 @@ func SimulateTick(g *Graph, rps float64, readRatio float64, state *SimState) ([]
 
 		total := bs.Queue + arriving[id]
 		rawCap := nodeCapacity(node, readRatio) * tickDt
+
+		// Apply block-specific behavior if it implements Ticker.
+		var effect blocks.TickEffect
+		if b, ok := blocks.ByKind(node.Kind); ok {
+			if ticker, ok := b.(blocks.Ticker); ok {
+				effect = ticker.Tick(blocks.TickContext{
+					Reads:  total * readRatio,
+					Writes: total * (1 - readRatio),
+					RawCap: rawCap,
+					Dt:     tickDt,
+					State:  bs.Extra,
+					Tick:   state.CurrentTick,
+				})
+			}
+		}
+
+		// Apply capacity modifier from block behavior.
+		if effect.CapMultiplier > 0 {
+			rawCap *= effect.CapMultiplier
+		}
+
 		// Contention: as utilization rises past 60%, effective throughput drops.
 		// Models lock waits, context switches, GC pressure in real systems.
 		util := math.Min(total/rawCap, 1.0)
@@ -78,6 +112,9 @@ func SimulateTick(g *Graph, rps float64, readRatio float64, state *SimState) ([]
 		effectiveRPS := processed / tickDt
 		br := computeBlock(node, effectiveRPS, readRatio)
 		br.QueueDepth = bs.Queue
+		br.Latency = effect.Latency
+		br.Saturated = effect.Saturated
+		br.Metrics = effect.Metrics
 		results = append(results, br)
 
 		for _, down := range node.outgoing {

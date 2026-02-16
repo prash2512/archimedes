@@ -37,6 +37,29 @@ type Block interface {
 	Profile() Profile
 }
 
+// Ticker is an optional interface blocks can implement for custom per-tick
+// simulation behavior (e.g. memory eviction, connection pool exhaustion).
+type Ticker interface {
+	InitState(state map[string]float64)
+	Tick(ctx TickContext) TickEffect
+}
+
+type TickContext struct {
+	Reads  float64            // read requests arriving this tick
+	Writes float64            // write requests arriving this tick
+	RawCap float64            // base capacity for this tick (capacity * dt)
+	Dt     float64            // tick duration in seconds
+	State  map[string]float64 // mutable per-block state (persists across ticks)
+	Tick   int                // current tick number
+}
+
+type TickEffect struct {
+	CapMultiplier float64            // multiply effective capacity (1.0 = no change)
+	Latency       float64            // estimated p50 latency in ms
+	Saturated     bool               // hit a hard limit
+	Metrics       map[string]float64 // block-specific metrics for UI
+}
+
 var Types []Block
 
 func ByKind(kind string) (Block, bool) {
