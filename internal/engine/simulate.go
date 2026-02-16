@@ -45,7 +45,7 @@ func (s *SimState) AllDrained() bool {
 
 const tickDt = 0.1 // seconds per tick
 
-func SimulateTick(g *Graph, rps float64, state *SimState) ([]BlockResult, error) {
+func SimulateTick(g *Graph, rps float64, readRatio float64, state *SimState) ([]BlockResult, error) {
 	order, err := g.TopoOrder()
 	if err != nil {
 		return nil, err
@@ -62,7 +62,7 @@ func SimulateTick(g *Graph, rps float64, state *SimState) ([]BlockResult, error)
 		bs := state.Blocks[id]
 
 		total := bs.Queue + arriving[id]
-		rawCap := nodeCapacity(node) * tickDt
+		rawCap := nodeCapacity(node, readRatio) * tickDt
 		// Contention: as utilization rises past 60%, effective throughput drops.
 		// Models lock waits, context switches, GC pressure in real systems.
 		util := math.Min(total/rawCap, 1.0)
@@ -76,7 +76,7 @@ func SimulateTick(g *Graph, rps float64, state *SimState) ([]BlockResult, error)
 		bs.Queue = total - processed
 
 		effectiveRPS := processed / tickDt
-		br := computeBlock(node, effectiveRPS)
+		br := computeBlock(node, effectiveRPS, readRatio)
 		br.QueueDepth = bs.Queue
 		results = append(results, br)
 
@@ -87,37 +87,52 @@ func SimulateTick(g *Graph, rps float64, state *SimState) ([]BlockResult, error)
 	return results, nil
 }
 
-func nodeCapacity(node *Node) float64 {
+func nodeCapacity(node *Node, readRatio float64) float64 {
 	b, ok := blocks.ByKind(node.Kind)
 	if !ok || node.Kind == "user" {
 		return math.MaxFloat64
 	}
-	return BlockCapacity(b.Profile())
+	return BlockCapacity(b.Profile(), readRatio)
 }
 
-func BlockCapacity(p blocks.Profile) float64 {
-	op := p.Read // MVP: match computeBlock assumption
+// BlockCapacity returns the max RPS a block can handle given a read/write mix.
+// readRatio is 0.0 (all writes) to 1.0 (all reads).
+func BlockCapacity(p blocks.Profile, readRatio float64) float64 {
+	writeRatio := 1.0 - readRatio
 	cap := math.MaxFloat64
 
-	if op.CPUMs > 0 && p.CPUCores > 0 {
-		cap = math.Min(cap, float64(p.CPUCores)*1000/op.CPUMs)
+	// CPU: weighted cost per request
+	weightedCPUMs := p.Read.CPUMs*readRatio + p.Write.CPUMs*writeRatio
+	if weightedCPUMs > 0 && p.CPUCores > 0 {
+		cap = math.Min(cap, float64(p.CPUCores)*1000/weightedCPUMs)
 	}
 
-	if p.DiskIOPS > 0 && op.DiskIOs > 0 {
-		diskPerOp := op.DiskIOs * (1 - p.BufferPoolRatio)
-		effIOPS := float64(p.DiskIOPS)
-		if op.Sequential {
-			effIOPS *= 10
+	// Disk: reads benefit from buffer pool, writes don't.
+	// Sequential IO is 10x more efficient (counts as 1/10th of an IOPS).
+	if p.DiskIOPS > 0 {
+		var weightedDiskIOs float64
+
+		readIOs := p.Read.DiskIOs * (1 - p.BufferPoolRatio) * readRatio
+		if p.Read.Sequential {
+			readIOs /= 10
 		}
-		if diskPerOp > 0 {
-			cap = math.Min(cap, effIOPS/diskPerOp)
+		weightedDiskIOs += readIOs
+
+		writeIOs := p.Write.DiskIOs * writeRatio
+		if p.Write.Sequential {
+			writeIOs /= 10
+		}
+		weightedDiskIOs += writeIOs
+
+		if weightedDiskIOs > 0 {
+			cap = math.Min(cap, float64(p.DiskIOPS)/weightedDiskIOs)
 		}
 	}
 
 	return cap
 }
 
-func Simulate(g *Graph, rps float64) ([]BlockResult, error) {
+func Simulate(g *Graph, rps float64, readRatio float64) ([]BlockResult, error) {
 	order, err := g.TopoOrder()
 	if err != nil {
 		return nil, err
@@ -133,7 +148,7 @@ func Simulate(g *Graph, rps float64) ([]BlockResult, error) {
 		node := g.nodes[id]
 		nodeRPS := incoming[id]
 
-		br := computeBlock(node, nodeRPS)
+		br := computeBlock(node, nodeRPS, readRatio)
 		results = append(results, br)
 
 		for _, down := range node.outgoing {
@@ -143,7 +158,7 @@ func Simulate(g *Graph, rps float64) ([]BlockResult, error) {
 	return results, nil
 }
 
-func computeBlock(node *Node, rps float64) BlockResult {
+func computeBlock(node *Node, rps float64, readRatio float64) BlockResult {
 	br := BlockResult{ID: node.ID, Kind: node.Kind, RPS: rps}
 
 	b, ok := blocks.ByKind(node.Kind)
@@ -153,24 +168,46 @@ func computeBlock(node *Node, rps float64) BlockResult {
 	}
 
 	p := b.Profile()
-	op := p.Read // MVP: treat all traffic as reads
+	writeRatio := 1.0 - readRatio
+	readRPS := rps * readRatio
+	writeRPS := rps * writeRatio
 
+	// CPU utilization: weighted by read and write costs
 	if p.CPUCores > 0 {
-		br.CPUUtil = rps * op.CPUMs / (float64(p.CPUCores) * 1000)
+		cpuCap := float64(p.CPUCores) * 1000
+		br.CPUUtil = (readRPS*p.Read.CPUMs + writeRPS*p.Write.CPUMs) / cpuCap
 	}
 
-	concurrent := math.Min(rps*(op.CPUMs/1000), float64(p.MaxConcurrency))
+	// Memory utilization: concurrent requests hold memory
+	weightedCPUMs := p.Read.CPUMs*readRatio + p.Write.CPUMs*writeRatio
+	weightedMemMB := p.Read.MemoryMB*readRatio + p.Write.MemoryMB*writeRatio
+	concurrent := math.Min(rps*(weightedCPUMs/1000), float64(p.MaxConcurrency))
 	if p.MemoryMB > 0 {
-		br.MemUtil = concurrent * op.MemoryMB / float64(p.MemoryMB)
+		br.MemUtil = concurrent * weightedMemMB / float64(p.MemoryMB)
 	}
 
-	if p.DiskIOPS > 0 && op.DiskIOs > 0 {
-		diskIOs := rps * op.DiskIOs * (1 - p.BufferPoolRatio)
-		effIOPS := float64(p.DiskIOPS)
-		if op.Sequential {
-			effIOPS *= 10
+	// Disk utilization: reads benefit from buffer pool, writes don't.
+	// Sequential IO is 10x more efficient.
+	if p.DiskIOPS > 0 {
+		var diskIOsPerSec float64
+
+		if p.Read.DiskIOs > 0 {
+			readIOs := readRPS * p.Read.DiskIOs * (1 - p.BufferPoolRatio)
+			if p.Read.Sequential {
+				readIOs /= 10
+			}
+			diskIOsPerSec += readIOs
 		}
-		br.DiskUtil = diskIOs / effIOPS
+
+		if p.Write.DiskIOs > 0 {
+			writeIOs := writeRPS * p.Write.DiskIOs
+			if p.Write.Sequential {
+				writeIOs /= 10
+			}
+			diskIOsPerSec += writeIOs
+		}
+
+		br.DiskUtil = diskIOsPerSec / float64(p.DiskIOPS)
 	}
 
 	br.Bottleneck = max(br.CPUUtil, br.MemUtil, br.DiskUtil)

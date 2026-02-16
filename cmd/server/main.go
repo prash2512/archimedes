@@ -57,7 +57,7 @@ func main() {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
-		results, err := engine.Simulate(g, topo.RPS)
+		results, err := engine.Simulate(g, topo.RPS, topo.ReadRatio)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
@@ -86,13 +86,14 @@ func main() {
 
 	mux.HandleFunc("POST /api/rps", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			RPS float64 `json:"rps"`
+			RPS       float64 `json:"rps"`
+			ReadRatio float64 `json:"read_ratio"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		sim.UpdateRPS(body.RPS)
+		sim.UpdateRPS(body.RPS, body.ReadRatio)
 		w.WriteHeader(http.StatusNoContent)
 	})
 

@@ -12,15 +12,16 @@ type TickResult struct {
 }
 
 type Sim struct {
-	mu      sync.Mutex
-	graph   *Graph
-	rps     float64
-	tick    int
-	stop    chan struct{}
-	running bool
-	paused  bool
-	state   *SimState
-	subs    []chan TickResult
+	mu        sync.Mutex
+	graph     *Graph
+	rps       float64
+	readRatio float64
+	tick      int
+	stop      chan struct{}
+	running   bool
+	paused    bool
+	state     *SimState
+	subs      []chan TickResult
 }
 
 func NewSim() *Sim {
@@ -62,6 +63,7 @@ func (s *Sim) Play(topo Topology) error {
 
 	s.graph = g
 	s.rps = topo.RPS
+	s.readRatio = topo.ReadRatio
 	s.tick = 0
 	s.stop = make(chan struct{})
 	s.running = true
@@ -86,10 +88,11 @@ func (s *Sim) stopLocked() {
 	s.running = false
 }
 
-func (s *Sim) UpdateRPS(rps float64) {
+func (s *Sim) UpdateRPS(rps float64, readRatio float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.rps = rps
+	s.readRatio = readRatio
 }
 
 func (s *Sim) broadcast(tr TickResult) {
@@ -112,7 +115,7 @@ func (s *Sim) loop() {
 		case <-ticker.C:
 			s.mu.Lock()
 			s.tick++
-			results, err := SimulateTick(s.graph, s.rps, s.state)
+			results, err := SimulateTick(s.graph, s.rps, s.readRatio, s.state)
 			if err != nil {
 				s.mu.Unlock()
 				continue

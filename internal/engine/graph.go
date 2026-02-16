@@ -27,9 +27,10 @@ type TopoEdge struct {
 }
 
 type Topology struct {
-	Blocks []TopoBlock `json:"blocks"`
-	Edges  []TopoEdge  `json:"edges"`
-	RPS    float64     `json:"rps"`
+	Blocks    []TopoBlock `json:"blocks"`
+	Edges     []TopoEdge  `json:"edges"`
+	RPS       float64     `json:"rps"`
+	ReadRatio float64     `json:"read_ratio"`
 }
 
 func BuildGraph(topo Topology) (*Graph, error) {

@@ -418,22 +418,30 @@
     // --- Controls ---
     const rpsSlider = document.getElementById('rps-slider');
     const rpsValue = document.getElementById('rps-value');
-    rpsSlider.addEventListener('input', () => {
-        rpsValue.textContent = parseInt(rpsSlider.value).toLocaleString();
-        if (playing) {
-            fetch('/api/rps', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ rps: parseInt(rpsSlider.value) })
-            });
-        }
-    });
-
     const rwSlider = document.getElementById('rw-slider');
     const rwValue = document.getElementById('rw-value');
+
+    function sendConfig() {
+        if (!playing) return;
+        fetch('/api/rps', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                rps: parseInt(rpsSlider.value),
+                read_ratio: parseInt(rwSlider.value) / 100
+            })
+        });
+    }
+
+    rpsSlider.addEventListener('input', () => {
+        rpsValue.textContent = parseInt(rpsSlider.value).toLocaleString();
+        sendConfig();
+    });
+
     rwSlider.addEventListener('input', () => {
         const r = parseInt(rwSlider.value);
         rwValue.textContent = `${r} / ${100 - r}`;
+        sendConfig();
     });
 
     // --- Play / Pause ---
@@ -450,10 +458,11 @@
 
     function buildTopology() {
         const rps = parseInt(rpsSlider.value);
+        const readRatio = parseInt(rwSlider.value) / 100;
         const blockEls = canvas.querySelectorAll('[data-kind]');
         const topoBlocks = Array.from(blockEls).map(el => ({ id: el.id, kind: el.dataset.kind }));
         const topoEdges = edges.map(e => ({ from: e.from.id, to: e.to.id }));
-        return { blocks: topoBlocks, edges: topoEdges, rps };
+        return { blocks: topoBlocks, edges: topoEdges, rps, read_ratio: readRatio };
     }
 
     async function play() {

@@ -20,7 +20,7 @@ func TestSimulateServiceCPU(t *testing.T) {
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{{ID: "s", Kind: "service"}},
 	})
-	results, err := Simulate(g, 1000)
+	results, err := Simulate(g, 1000, 1.0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestSimulateSQLDisk(t *testing.T) {
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{{ID: "db", Kind: "sql_datastore"}},
 	})
-	results, err := Simulate(g, 8000)
+	results, err := Simulate(g, 8000, 1.0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestSimulateChainPropagation(t *testing.T) {
 			{From: "s", To: "db"},
 		},
 	})
-	results, err := Simulate(g, 500)
+	results, err := Simulate(g, 500, 1.0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestSimulateRedisHighRPS(t *testing.T) {
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{{ID: "r", Kind: "redis"}},
 	})
-	results, err := Simulate(g, 80000)
+	results, err := Simulate(g, 80000, 1.0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestBlockCapacity(t *testing.T) {
 		if !ok {
 			t.Fatalf("unknown kind %s", tt.kind)
 		}
-		got := BlockCapacity(b.Profile())
+		got := BlockCapacity(b.Profile(), 1.0)
 		if !approx(got, tt.want) {
 			t.Errorf("%s: want %g, got %g", tt.kind, tt.want, got)
 		}
@@ -145,7 +145,7 @@ func TestSimulateTickQueueBuilds(t *testing.T) {
 
 	var prev float64
 	for i := 0; i < 5; i++ {
-		SimulateTick(g, 8000, state)
+		SimulateTick(g, 8000, 1.0, state)
 		q := state.Blocks["s"].Queue
 		if q <= prev {
 			t.Fatalf("tick %d: queue should grow, got %g (prev %g)", i+1, q, prev)
@@ -165,12 +165,12 @@ func TestSimulateTickDrains(t *testing.T) {
 	state := NewSimState(g)
 
 	for i := 0; i < 5; i++ {
-		SimulateTick(g, 8000, state)
+		SimulateTick(g, 8000, 1.0, state)
 	}
 	peak := state.Blocks["s"].Queue
 	// Drain: run enough ticks for queue to empty
 	for i := 0; i < 20; i++ {
-		SimulateTick(g, 0, state)
+		SimulateTick(g, 0, 1.0, state)
 	}
 	q := state.Blocks["s"].Queue
 	if q > 0.5 {
@@ -187,7 +187,7 @@ func TestSimulateTickQueueAtHighUtil(t *testing.T) {
 	state := NewSimState(g)
 
 	for i := 0; i < 10; i++ {
-		SimulateTick(g, 3600, state)
+		SimulateTick(g, 3600, 1.0, state)
 	}
 	q := state.Blocks["s"].Queue
 	if q < 1 {
@@ -212,7 +212,7 @@ func TestSimulateTickChainThroughput(t *testing.T) {
 	})
 	state := NewSimState(g)
 
-	results, _ := SimulateTick(g, 500, state)
+	results, _ := SimulateTick(g, 500, 1.0, state)
 	byID := map[string]BlockResult{}
 	for _, r := range results {
 		byID[r.ID] = r
@@ -226,6 +226,95 @@ func TestSimulateTickChainThroughput(t *testing.T) {
 	}
 	if state.Blocks["s"].Queue > 0.5 {
 		t.Errorf("service queue should be 0, got %g", state.Blocks["s"].Queue)
+	}
+}
+
+func TestSQLWriteHeavyCapacity(t *testing.T) {
+	// SQL at 100% reads: capacity = 8000 RPS (CPU-limited: 4*1000/0.5)
+	// SQL at 100% writes: capacity = 500 RPS (disk-limited: 5000/10)
+	// SQL at 70/30 read/write: disk becomes bottleneck from write amplification
+	b, _ := blocks.ByKind("sql_datastore")
+	p := b.Profile()
+
+	allRead := BlockCapacity(p, 1.0)
+	if !approx(allRead, 8000) {
+		t.Errorf("all-read capacity: want 8000, got %g", allRead)
+	}
+
+	allWrite := BlockCapacity(p, 0.0)
+	if !approx(allWrite, 500) {
+		t.Errorf("all-write capacity: want 500, got %g", allWrite)
+	}
+
+	// 70/30: disk = reads: 2*0.25*0.7=0.35 + writes: 10*0.3=3.0 = 3.35 IOs
+	// disk cap = 5000/3.35 ≈ 1492.5
+	// cpu = 4000/(0.5*0.7+1.0*0.3) = 4000/0.65 ≈ 6153.8
+	// bottleneck is disk at ~1493
+	mixed := BlockCapacity(p, 0.7)
+	if mixed > 1600 || mixed < 1400 {
+		t.Errorf("70/30 capacity: want ~1493, got %g", mixed)
+	}
+}
+
+func TestSQLWriteHeavyHealth(t *testing.T) {
+	// SQL at 1000 RPS all-reads is green (capacity 8000)
+	// SQL at 1000 RPS all-writes is red (capacity 500)
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{{ID: "db", Kind: "sql_datastore"}},
+	})
+	readResults, _ := Simulate(g, 1000, 1.0)
+	writeResults, _ := Simulate(g, 1000, 0.0)
+
+	if readResults[0].Health != "green" {
+		t.Errorf("all-read at 1000 RPS: want green, got %s", readResults[0].Health)
+	}
+	if writeResults[0].Health != "red" {
+		t.Errorf("all-write at 1000 RPS: want red, got %s", writeResults[0].Health)
+	}
+}
+
+func TestKafkaSymmetric(t *testing.T) {
+	// Kafka reads and writes have the same cost — capacity shouldn't change
+	b, _ := blocks.ByKind("kafka")
+	p := b.Profile()
+
+	allRead := BlockCapacity(p, 1.0)
+	allWrite := BlockCapacity(p, 0.0)
+	mixed := BlockCapacity(p, 0.5)
+
+	if !approx(allRead, allWrite) {
+		t.Errorf("kafka should be symmetric: read=%g write=%g", allRead, allWrite)
+	}
+	if !approx(allRead, mixed) {
+		t.Errorf("kafka should be symmetric: read=%g mixed=%g", allRead, mixed)
+	}
+}
+
+func TestRedisSymmetric(t *testing.T) {
+	// Redis reads and writes have the same cost — capacity shouldn't change
+	b, _ := blocks.ByKind("redis")
+	p := b.Profile()
+
+	allRead := BlockCapacity(p, 1.0)
+	allWrite := BlockCapacity(p, 0.0)
+
+	if !approx(allRead, allWrite) {
+		t.Errorf("redis should be symmetric: read=%g write=%g", allRead, allWrite)
+	}
+}
+
+func TestSimulateTickWriteHeavy(t *testing.T) {
+	// SQL at 1000 RPS all-writes should queue (capacity ~500)
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{{ID: "db", Kind: "sql_datastore"}},
+	})
+	state := NewSimState(g)
+
+	for range 5 {
+		SimulateTick(g, 1000, 0.0, state)
+	}
+	if state.Blocks["db"].Queue < 100 {
+		t.Errorf("SQL at 1000 write RPS should queue, got %g", state.Blocks["db"].Queue)
 	}
 }
 
