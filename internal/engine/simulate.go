@@ -16,6 +16,7 @@ type BlockResult struct {
 	Bottleneck float64            `json:"bottleneck"`
 	Health     string             `json:"health"`
 	QueueDepth float64            `json:"queue_depth"`
+	Dropped    float64            `json:"dropped"`
 	Latency    float64            `json:"latency"`
 	Saturated  bool               `json:"saturated"`
 	Metrics    map[string]float64 `json:"metrics,omitempty"`
@@ -54,7 +55,10 @@ func (s *SimState) AllDrained() bool {
 	return true
 }
 
-const tickDt = 0.1 // seconds per tick
+const (
+	tickDt   = 0.1  // seconds per tick
+	maxQueue = 5000 // overflow is dropped — models client timeouts
+)
 
 func SimulateTick(g *Graph, rps float64, readRatio float64, state *SimState) ([]BlockResult, error) {
 	order, err := g.TopoOrder()
@@ -109,9 +113,17 @@ func SimulateTick(g *Graph, rps float64, readRatio float64, state *SimState) ([]
 		processed := math.Min(total, cap)
 		bs.Queue = total - processed
 
+		// Drop overflow — models client timeouts / backpressure.
+		var dropped float64
+		if bs.Queue > maxQueue {
+			dropped = bs.Queue - maxQueue
+			bs.Queue = maxQueue
+		}
+
 		effectiveRPS := processed / tickDt
 		br := computeBlock(node, effectiveRPS, readRatio)
 		br.QueueDepth = bs.Queue
+		br.Dropped = dropped
 		br.Latency = effect.Latency
 		br.Saturated = effect.Saturated
 		br.Metrics = effect.Metrics

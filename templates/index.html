@@ -254,6 +254,12 @@
                         <div class="queue-fill h-full bg-orange-500/60 rounded-full transition-all" style="width:0%"></div>
                     </div>
                 </div>
+                <div class="drop-bar w-full mt-0.5 hidden">
+                    <div class="flex justify-between text-[9px]">
+                        <span class="text-red-500">Drops</span>
+                        <span class="drop-val text-red-400 tabular-nums">0</span>
+                    </div>
+                </div>
             </div>`;
         el.addEventListener('mousedown', onMouseDown);
         canvas.appendChild(el);
@@ -621,6 +627,16 @@
                 qFill.style.width = qPct + '%';
             } else {
                 qBar.classList.add('hidden');
+            }
+
+            // Drops
+            const dBar = el.querySelector('.drop-bar');
+            const dVal = el.querySelector('.drop-val');
+            if (b.dropped > 0.5) {
+                dBar.classList.remove('hidden');
+                dVal.textContent = Math.round(b.dropped).toLocaleString();
+            } else {
+                dBar.classList.add('hidden');
             }
         }
     }
