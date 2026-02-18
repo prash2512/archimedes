@@ -8,6 +8,9 @@ import (
 type Node struct {
 	ID       string
 	Kind     string
+	Replicas int
+	Shards   int
+	CPUCores int
 	outgoing []string
 }
 
@@ -17,8 +20,11 @@ type Graph struct {
 }
 
 type TopoBlock struct {
-	ID   string `json:"id"`
-	Kind string `json:"kind"`
+	ID       string `json:"id"`
+	Kind     string `json:"kind"`
+	Replicas int    `json:"replicas,omitempty"`
+	Shards   int    `json:"shards,omitempty"`
+	CPUCores int    `json:"cpu_cores,omitempty"`
 }
 
 type TopoEdge struct {
@@ -40,7 +46,21 @@ func BuildGraph(topo Topology) (*Graph, error) {
 	}
 
 	for _, b := range topo.Blocks {
-		g.nodes[b.ID] = &Node{ID: b.ID, Kind: b.Kind}
+		replicas := b.Replicas
+		if replicas < 1 {
+			replicas = 1
+		}
+		shards := b.Shards
+		if shards < 1 {
+			shards = 1
+		}
+		g.nodes[b.ID] = &Node{
+			ID:       b.ID,
+			Kind:     b.Kind,
+			Replicas: replicas,
+			Shards:   shards,
+			CPUCores: b.CPUCores,
+		}
 		g.incoming[b.ID] = 0
 	}
 
