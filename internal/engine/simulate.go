@@ -144,7 +144,21 @@ func nodeCapacity(node *Node, readRatio float64) float64 {
 	if !ok || node.Kind == "user" {
 		return math.MaxFloat64
 	}
-	return BlockCapacity(b.Profile(), readRatio)
+	return BlockCapacity(ScaleProfile(b.Profile(), node), readRatio)
+}
+
+// ScaleProfile adjusts a block's hardware profile based on replicas, shards,
+// and CPU override. Replicas scale CPU, memory, and concurrency linearly.
+// Shards scale disk I/O and concurrency (parallel partitions).
+func ScaleProfile(p blocks.Profile, node *Node) blocks.Profile {
+	if node.CPUCores > 0 {
+		p.CPUCores = node.CPUCores
+	}
+	p.CPUCores *= node.Replicas
+	p.MemoryMB *= node.Replicas
+	p.MaxConcurrency *= node.Replicas * node.Shards
+	p.DiskIOPS *= node.Replicas * node.Shards
+	return p
 }
 
 // BlockCapacity returns the max RPS a block can handle given a read/write mix.
@@ -219,7 +233,7 @@ func computeBlock(node *Node, rps float64, readRatio float64) BlockResult {
 		return br
 	}
 
-	p := b.Profile()
+	p := ScaleProfile(b.Profile(), node)
 	writeRatio := 1.0 - readRatio
 	readRPS := rps * readRatio
 	writeRPS := rps * writeRatio
