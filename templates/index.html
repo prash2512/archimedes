@@ -60,6 +60,9 @@
     <header class="h-11 bg-gray-900 border-b border-gray-800 flex items-center px-4 gap-3 shrink-0">
         <span class="text-sm font-semibold tracking-wide text-gray-200">Archimedes</span>
         <span class="text-[10px] text-gray-600 hidden sm:inline">System Design Playground</span>
+        <button id="preset-netflix"
+                class="ml-4 px-2.5 py-1 text-[11px] rounded bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
+                title="Load Netflix architecture preset">Netflix</button>
         <div class="ml-auto flex items-center gap-3">
             <button id="play-btn"
                     class="w-9 h-9 flex items-center justify-center rounded-full bg-gray-800 hover:bg-gray-700 transition-colors border border-gray-700"
@@ -148,9 +151,9 @@
     <script>
     // --- Category config for sidebar grouping and block accent colors ---
     const categories = {
-        traffic:  { label: 'Traffic',  color: '#6366f1', kinds: ['user', 'load_balancer', 'api_gateway'] },
+        traffic:  { label: 'Traffic',  color: '#6366f1', kinds: ['user', 'cdn', 'load_balancer', 'api_gateway'] },
         compute:  { label: 'Compute',  color: '#3b82f6', kinds: ['service', 'worker', 'analytics'] },
-        storage:  { label: 'Storage',  color: '#10b981', kinds: ['sql_datastore', 'redis', 'elasticsearch'] },
+        storage:  { label: 'Storage',  color: '#10b981', kinds: ['sql_datastore', 'redis', 'kv_store', 'docstore', 'elasticsearch', 's3'] },
         queue:    { label: 'Queue',    color: '#f59e0b', kinds: ['kafka'] },
     };
     const kindToCategory = {};
@@ -564,11 +567,19 @@
 
     // Block-specific ticker gauges: shown below CPU/Mem/Disk
     const tickerGauges = {
-        sql_datastore: [{ key: 'conn_pool_util', label: 'Pool' }],
-        redis:         [{ key: 'memory_pct',     label: 'Data' }],
-        service:       [{ key: 'goroutine_util', label: 'Grtn' }],
-        worker:        [{ key: 'thread_pool_util', label: 'Thrd' }],
-        analytics:     [{ key: 'query_pool_util',  label: 'Qry' }],
+        sql_datastore:  [{ key: 'conn_pool_util',  label: 'Pool' }],
+        redis:          [{ key: 'memory_pct',      label: 'Data' }],
+        service:        [{ key: 'goroutine_util',  label: 'Grtn' }],
+        worker:         [{ key: 'thread_pool_util',label: 'Thrd' }],
+        analytics:      [{ key: 'query_pool_util', label: 'Qry' }],
+        elasticsearch:  [{ key: 'merge_pressure',  label: 'Mrge' }],
+        kafka:          [{ key: 'page_cache_util', label: 'PgCa' }],
+        api_gateway:    [{ key: 'rate_util',       label: 'Rate' }],
+        load_balancer:  [{ key: 'conn_track_util', label: 'Conn' }],
+        cdn:            [{ key: 'hit_ratio',       label: 'Hit%' }],
+        s3:             [{ key: 'bandwidth_util',  label: 'BW' }],
+        kv_store:       [{ key: 'hotspot_pressure',label: 'HotK' }],
+        docstore:       [{ key: 'cache_pressure',  label: 'WTgr' }],
     };
 
     function applyResults(blockResults) {
@@ -656,6 +667,35 @@
         document.getElementById('stat-degraded').textContent = yellow;
         document.getElementById('stat-failing').textContent = red;
     }
+    // --- Presets ---
+    document.getElementById('preset-netflix').addEventListener('click', () => {
+        // Clear canvas
+        for (let i = edges.length - 1; i >= 0; i--) {
+            removeEdgeDOM(edges[i]);
+            edges.splice(i, 1);
+        }
+        canvas.querySelectorAll('[data-kind]').forEach(el => el.remove());
+        deselect();
+        deselectEdge();
+        nextId = 0;
+
+        const layout = [
+            { kind: 'user',           name: 'User',           x: 100,  y: 300 },
+            { kind: 'cdn',            name: 'CDN',            x: 250,  y: 300 },
+            { kind: 'load_balancer',  name: 'Load Balancer',  x: 400,  y: 300 },
+            { kind: 'api_gateway',    name: 'API Gateway',    x: 560,  y: 300 },
+            { kind: 'service',        name: 'Service',        x: 730,  y: 300 },
+            { kind: 'redis',          name: 'Redis',          x: 910,  y: 140 },
+            { kind: 'sql_datastore',  name: 'SQL Datastore',  x: 910,  y: 300 },
+            { kind: 'kv_store',       name: 'KV Store',       x: 910,  y: 460 },
+            { kind: 'kafka',          name: 'Kafka',          x: 730,  y: 520 },
+            { kind: 'worker',         name: 'Worker',         x: 560,  y: 620 },
+            { kind: 'elasticsearch',  name: 'Elasticsearch',  x: 400,  y: 620 },
+            { kind: 's3',             name: 'Object Storage', x: 250,  y: 620 },
+        ];
+
+        for (const b of layout) addBlock(b.kind, b.name, b.x, b.y);
+    });
     </script>
 
 </body>
