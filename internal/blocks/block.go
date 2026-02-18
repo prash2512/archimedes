@@ -9,7 +9,7 @@ const (
 )
 
 const (
-	SSDDiskIOPS = 5000
+	SSDDiskIOPS = 50000 // modern NVMe
 	HDDDiskIOPS = 200
 )
 

@@ -5,10 +5,10 @@ import "math"
 const (
 	workerThreads      = 50
 	workerReadHoldSec  = 0.005 // 5ms — status check
-	workerWriteHoldSec = 0.100 // 100ms — load payload, process, write results
-	workerMemMB        = 4096
+	workerWriteHoldSec = 0.050 // 50ms — load payload, process, write results
+	workerMemMB        = 8192
 	workerReadMemMB    = 1.0  // status response
-	workerWriteMemMB   = 50.0 // full job payload in memory
+	workerWriteMemMB   = 10.0 // job payload in memory
 )
 
 type Worker struct{}

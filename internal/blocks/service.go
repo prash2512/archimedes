@@ -5,10 +5,10 @@ import "math"
 const (
 	goroutinePool   = 10000
 	svcReadHoldSec  = 0.005 // 5ms wall-clock — network + processing
-	svcWriteHoldSec = 0.020 // 20ms wall-clock — parse, validate, downstream calls
-	svcMemMB        = 2048
-	svcReadMemMB    = 2.0  // response objects, serialization buffers
-	svcWriteMemMB   = 10.0 // request body, validation objects, query builders
+	svcWriteHoldSec = 0.015 // 15ms wall-clock — parse, validate, downstream calls
+	svcMemMB        = 4096
+	svcReadMemMB    = 1.0 // response objects, serialization buffers
+	svcWriteMemMB   = 4.0 // request body, validation objects, query builders
 )
 
 type Service struct{}
@@ -18,10 +18,10 @@ func (Service) Name() string { return "Service" }
 
 func (Service) Profile() Profile {
 	return Profile{
-		CPUCores:       2,
+		CPUCores:       4,
 		MemoryMB:       svcMemMB,
-		Read:           OpCost{CPUMs: 0.3, MemoryMB: svcReadMemMB},
-		Write:          OpCost{CPUMs: 2.0, MemoryMB: svcWriteMemMB},
+		Read:           OpCost{CPUMs: 0.2, MemoryMB: svcReadMemMB},
+		Write:          OpCost{CPUMs: 1.0, MemoryMB: svcWriteMemMB},
 		MaxConcurrency: goroutinePool,
 	}
 }

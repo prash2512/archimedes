@@ -8,12 +8,12 @@ import (
 
 const (
 	bTreeReadIOs  = 2
-	bTreeWriteIOs = 10
-	bufferPool    = 0.75
-	maxConns      = 100
+	bTreeWriteIOs = 6
+	bufferPool    = 0.85 // well-tuned shared_buffers
+	maxConns      = 200
 
 	readHoldSec  = 0.002 // 2ms — quick lookup, buffer pool hit
-	writeHoldSec = 0.012 // 12ms — lock, WAL, fsync
+	writeHoldSec = 0.010 // 10ms — lock, WAL, fsync
 )
 
 type SQL struct{}
@@ -23,8 +23,8 @@ func (SQL) Name() string { return "SQL Datastore" }
 
 func (SQL) Profile() blocks.Profile {
 	return blocks.Profile{
-		CPUCores: 4,
-		MemoryMB: 16384,
+		CPUCores: 8,
+		MemoryMB: 32768,
 		DiskIOPS: blocks.SSDDiskIOPS,
 		Read:     blocks.OpCost{CPUMs: 0.5, MemoryMB: 0.5, DiskIOs: bTreeReadIOs},
 		Write:    blocks.OpCost{CPUMs: 1.0, MemoryMB: 0.5, DiskIOs: bTreeWriteIOs},

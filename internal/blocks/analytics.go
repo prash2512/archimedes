@@ -7,8 +7,8 @@ const (
 	analyticsReadHoldSec  = 0.100 // 100ms — full aggregation (scan + sort + group)
 	analyticsWriteHoldSec = 0.005 // 5ms — log ingestion
 	analyticsMemMB        = 32768
-	analyticsReadMemMB    = 200.0 // intermediate aggregation buffers
-	analyticsWriteMemMB   = 0.2   // log entry, tiny
+	analyticsReadMemMB    = 50.0 // intermediate aggregation buffers
+	analyticsWriteMemMB   = 0.2  // log entry, tiny
 )
 
 type Analytics struct{}

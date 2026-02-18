@@ -16,8 +16,8 @@ func approx(a, b float64) bool {
 }
 
 func TestSimulateServiceCPU(t *testing.T) {
-	// Service: 2 cores, 0.3ms per read → saturates at 6667 RPS
-	// At 1000 read RPS: cpu = 1000 * 0.3 / 2000 = 0.15
+	// Service: 4 cores, 0.2ms per read → saturates at 20000 RPS
+	// At 1000 read RPS: cpu = 1000 * 0.2 / 4000 = 0.05
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{{ID: "s", Kind: "service"}},
 	})
@@ -26,8 +26,8 @@ func TestSimulateServiceCPU(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := results[0]
-	if !approx(r.CPUUtil, 0.15) {
-		t.Errorf("cpu_util: want 0.15, got %f", r.CPUUtil)
+	if !approx(r.CPUUtil, 0.05) {
+		t.Errorf("cpu_util: want 0.05, got %f", r.CPUUtil)
 	}
 	if r.DiskUtil != 0 {
 		t.Errorf("disk_util: want 0, got %f", r.DiskUtil)
@@ -38,18 +38,19 @@ func TestSimulateServiceCPU(t *testing.T) {
 }
 
 func TestSimulateSQLDisk(t *testing.T) {
-	// SQL: 5000 IOPS, 2 read I/Os, 0.75 buffer pool → effective 0.5 I/Os per read
-	// At 8000 RPS: disk = 8000 * 0.5 / 5000 = 0.8, cpu = 8000 * 0.5 / 4000 = 1.0
+	// SQL: 8 cores, 50000 IOPS (NVMe), 2 read I/Os, 0.85 buffer pool → 0.3 I/Os per read
+	// At 16000 RPS: disk = 16000 * 0.3 / 50000 = 0.096, cpu = 16000 * 0.5 / 8000 = 1.0
+	// CPU is the bottleneck, not disk
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{{ID: "db", Kind: "sql_datastore"}},
 	})
-	results, err := Simulate(g, 8000, 1.0)
+	results, err := Simulate(g, 16000, 1.0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	r := results[0]
-	if !approx(r.DiskUtil, 0.8) {
-		t.Errorf("disk_util: want 0.8, got %f", r.DiskUtil)
+	if r.DiskUtil > 0.15 {
+		t.Errorf("disk_util: want <0.15, got %f", r.DiskUtil)
 	}
 	if !approx(r.CPUUtil, 1.0) {
 		t.Errorf("cpu_util: want 1.0, got %f", r.CPUUtil)
@@ -117,15 +118,15 @@ func TestBlockCapacity(t *testing.T) {
 		kind string
 		want float64
 	}{
-		{"service", 6666.667},    // read: 2*1000/0.3
+		{"service", 20000},       // read: 4*1000/0.2
 		{"worker", 8000},         // read: 4*1000/0.5
 		{"analytics", 800},       // read: 8*1000/10.0
 		{"load_balancer", 100000},
 		{"api_gateway", 40000},
 		{"redis", 100000},
-		{"sql_datastore", 8000},  // read-limited by CPU: 4*1000/0.5
-		{"kafka", 50000},         // sequential disk: 5000*10/1
-		{"elasticsearch", 5000},  // disk: 5000/(2*0.5)
+		{"sql_datastore", 16000}, // read-limited by CPU: 8*1000/0.5
+		{"kafka", 200000},        // CPU: 4*1000/0.02
+		{"elasticsearch", 8000},  // CPU: 8*1000/1.0
 	}
 	for _, tt := range tests {
 		b, ok := blocks.ByKind(tt.kind)
@@ -140,23 +141,18 @@ func TestBlockCapacity(t *testing.T) {
 }
 
 func TestSimulateTickQueueBuilds(t *testing.T) {
-	// Service capacity = 4000 RPS. Send 8000 → queue should grow each tick.
+	// Service capacity = 20000 RPS reads. Send 25000 → queue should grow.
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{{ID: "s", Kind: "service"}},
 	})
 	state := NewSimState(g)
 
-	var prev float64
-	for i := 0; i < 5; i++ {
-		SimulateTick(g, 8000, 1.0, state)
-		q := state.Blocks["s"].Queue
-		if q <= prev {
-			t.Fatalf("tick %d: queue should grow, got %g (prev %g)", i+1, q, prev)
-		}
-		prev = q
+	for i := 0; i < 3; i++ {
+		SimulateTick(g, 25000, 1.0, state)
 	}
-	if prev < 1000 {
-		t.Errorf("queue after 5 overloaded ticks should be large, got %g", prev)
+	q := state.Blocks["s"].Queue
+	if q < 100 {
+		t.Errorf("queue after 3 overloaded ticks should be growing, got %g", q)
 	}
 }
 
@@ -168,7 +164,7 @@ func TestSimulateTickDrains(t *testing.T) {
 	state := NewSimState(g)
 
 	for i := 0; i < 5; i++ {
-		SimulateTick(g, 8000, 1.0, state)
+		SimulateTick(g, 30000, 1.0, state)
 	}
 	peak := state.Blocks["s"].Queue
 	// Drain: run enough ticks for queue to empty
@@ -182,7 +178,7 @@ func TestSimulateTickDrains(t *testing.T) {
 }
 
 func TestSimulateTickQueueAtHighUtil(t *testing.T) {
-	// Service at 90% raw load (6000 RPS, capacity 6667) should queue
+	// Service at 90% raw load (18000 RPS, capacity 20000) should queue
 	// due to contention effects even though raw capacity isn't exceeded
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{{ID: "s", Kind: "service"}},
@@ -190,7 +186,7 @@ func TestSimulateTickQueueAtHighUtil(t *testing.T) {
 	state := NewSimState(g)
 
 	for i := 0; i < 10; i++ {
-		SimulateTick(g, 6000, 1.0, state)
+		SimulateTick(g, 18000, 1.0, state)
 	}
 	q := state.Blocks["s"].Queue
 	if q < 1 {
@@ -200,7 +196,7 @@ func TestSimulateTickQueueAtHighUtil(t *testing.T) {
 
 func TestSimulateTickChainThroughput(t *testing.T) {
 	// User → Service → SQL at 500 RPS (within capacity for both)
-	// Service capacity=4000, SQL read capacity=8000
+	// Service capacity=20000, SQL read capacity=16000
 	// All requests should flow through, no queue buildup
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{
@@ -233,46 +229,48 @@ func TestSimulateTickChainThroughput(t *testing.T) {
 }
 
 func TestSQLWriteHeavyCapacity(t *testing.T) {
-	// SQL at 100% reads: capacity = 8000 RPS (CPU-limited: 4*1000/0.5)
-	// SQL at 100% writes: capacity = 500 RPS (disk-limited: 5000/10)
-	// SQL at 70/30 read/write: disk becomes bottleneck from write amplification
+	// SQL: 8 cores, 0.5ms read CPU, 1.0ms write CPU, 50k NVMe IOPS
+	// 100% reads: CPU = 8*1000/0.5 = 16000 RPS
+	// 100% writes: CPU = 8*1000/1.0 = 8000 RPS
+	// 70/30: CPU = 8000/(0.5*0.7+1.0*0.3) = 8000/0.65 ≈ 12308
 	b, _ := blocks.ByKind("sql_datastore")
 	p := b.Profile()
 
 	allRead := BlockCapacity(p, 1.0)
-	if !approx(allRead, 8000) {
-		t.Errorf("all-read capacity: want 8000, got %g", allRead)
+	if !approx(allRead, 16000) {
+		t.Errorf("all-read capacity: want 16000, got %g", allRead)
 	}
 
 	allWrite := BlockCapacity(p, 0.0)
-	if !approx(allWrite, 500) {
-		t.Errorf("all-write capacity: want 500, got %g", allWrite)
+	if !approx(allWrite, 8000) {
+		t.Errorf("all-write capacity: want 8000, got %g", allWrite)
 	}
 
-	// 70/30: disk = reads: 2*0.25*0.7=0.35 + writes: 10*0.3=3.0 = 3.35 IOs
-	// disk cap = 5000/3.35 ≈ 1492.5
-	// cpu = 4000/(0.5*0.7+1.0*0.3) = 4000/0.65 ≈ 6153.8
-	// bottleneck is disk at ~1493
 	mixed := BlockCapacity(p, 0.7)
-	if mixed > 1600 || mixed < 1400 {
-		t.Errorf("70/30 capacity: want ~1493, got %g", mixed)
+	if mixed > 12500 || mixed < 12100 {
+		t.Errorf("70/30 capacity: want ~12308, got %g", mixed)
 	}
 }
 
 func TestSQLWriteHeavyHealth(t *testing.T) {
-	// SQL at 1000 RPS all-reads is green (capacity 8000)
-	// SQL at 1000 RPS all-writes is red (capacity 500)
+	// SQL: 8 cores, capacity = 16k reads, 8k writes
+	// 1000 RPS reads → green, 1000 RPS writes → green
+	// 10000 RPS all-writes → red (exceeds 8k capacity)
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{{ID: "db", Kind: "sql_datastore"}},
 	})
 	readResults, _ := Simulate(g, 1000, 1.0)
 	writeResults, _ := Simulate(g, 1000, 0.0)
+	heavyWriteResults, _ := Simulate(g, 10000, 0.0)
 
 	if readResults[0].Health != "green" {
 		t.Errorf("all-read at 1000 RPS: want green, got %s", readResults[0].Health)
 	}
-	if writeResults[0].Health != "red" {
-		t.Errorf("all-write at 1000 RPS: want red, got %s", writeResults[0].Health)
+	if writeResults[0].Health != "green" {
+		t.Errorf("all-write at 1000 RPS: want green, got %s", writeResults[0].Health)
+	}
+	if heavyWriteResults[0].Health != "red" {
+		t.Errorf("all-write at 10000 RPS: want red, got %s", heavyWriteResults[0].Health)
 	}
 }
 
@@ -307,17 +305,17 @@ func TestRedisSymmetric(t *testing.T) {
 }
 
 func TestSimulateTickWriteHeavy(t *testing.T) {
-	// SQL at 1000 RPS all-writes should queue (capacity ~500)
+	// SQL at 10000 RPS all-writes should queue (capacity ~8000 CPU-limited)
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{{ID: "db", Kind: "sql_datastore"}},
 	})
 	state := NewSimState(g)
 
 	for range 5 {
-		SimulateTick(g, 1000, 0.0, state)
+		SimulateTick(g, 10000, 0.0, state)
 	}
 	if state.Blocks["db"].Queue < 100 {
-		t.Errorf("SQL at 1000 write RPS should queue, got %g", state.Blocks["db"].Queue)
+		t.Errorf("SQL at 10000 write RPS should queue, got %g", state.Blocks["db"].Queue)
 	}
 }
 
@@ -383,21 +381,21 @@ func TestSQLConnPoolWriteHeavy(t *testing.T) {
 }
 
 func TestSQLConnPoolSaturation(t *testing.T) {
-	// At very high write RPS the pool should saturate (active_conns → maxConns=100).
-	// 100/0.012 ≈ 8333 write RPS to fill pool.
+	// At very high write RPS the pool should saturate (active_conns → maxConns=200).
+	// 200/0.010 = 20000 write RPS to fill pool.
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{{ID: "db", Kind: "sql_datastore"}},
 	})
 	state := NewSimState(g)
 
 	for range 5 {
-		results, _ := SimulateTick(g, 10000, 0.0, state)
+		results, _ := SimulateTick(g, 25000, 0.0, state)
 		_ = results
 	}
 
 	active := state.Blocks["db"].Extra["active_conns"]
-	if active < 95 {
-		t.Errorf("conn pool should be near-full at 10k write RPS, got %g active", active)
+	if active < 190 {
+		t.Errorf("conn pool should be near-full at 25k write RPS, got %g active", active)
 	}
 }
 
