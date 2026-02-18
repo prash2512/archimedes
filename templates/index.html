@@ -144,6 +144,38 @@
                     </marker>
                 </defs>
             </svg>
+
+            <!-- Block config panel -->
+            <div id="config-panel" class="absolute bg-gray-900 border border-gray-700 rounded-lg p-3 w-52 shadow-lg z-50 hidden"
+                 style="top: 20px; right: 20px;">
+                <div class="flex justify-between items-center mb-2.5">
+                    <span id="config-title" class="text-[11px] font-semibold text-gray-200">Config</span>
+                    <button onclick="closeConfigPanel()" class="text-gray-500 hover:text-gray-300 text-sm leading-none">&times;</button>
+                </div>
+                <div class="flex flex-col gap-2.5">
+                    <div>
+                        <div class="flex justify-between text-[10px] mb-1">
+                            <span class="text-gray-500">Replicas</span>
+                            <span id="config-replicas-val" class="text-gray-300 tabular-nums">1</span>
+                        </div>
+                        <input type="range" id="config-replicas" min="1" max="10" value="1" step="1" class="w-full">
+                    </div>
+                    <div id="config-shards-row">
+                        <div class="flex justify-between text-[10px] mb-1">
+                            <span class="text-gray-500">Shards</span>
+                            <span id="config-shards-val" class="text-gray-300 tabular-nums">1</span>
+                        </div>
+                        <input type="range" id="config-shards" min="1" max="20" value="1" step="1" class="w-full">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-[10px] mb-1">
+                            <span class="text-gray-500">CPU Cores</span>
+                            <span id="config-cpu-val" class="text-gray-300 tabular-nums">default</span>
+                        </div>
+                        <input type="range" id="config-cpu" min="0" max="64" value="0" step="1" class="w-full">
+                    </div>
+                </div>
+            </div>
         </main>
 
     </div>
@@ -265,6 +297,10 @@
                 </div>
             </div>`;
         el.addEventListener('mousedown', onMouseDown);
+        el.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            showConfigPanel(el);
+        });
         canvas.appendChild(el);
     }
 
@@ -469,7 +505,16 @@
         const rps = parseInt(rpsSlider.value);
         const readRatio = parseInt(rwSlider.value) / 100;
         const blockEls = canvas.querySelectorAll('[data-kind]');
-        const topoBlocks = Array.from(blockEls).map(el => ({ id: el.id, kind: el.dataset.kind }));
+        const topoBlocks = Array.from(blockEls).map(el => {
+            const b = { id: el.id, kind: el.dataset.kind };
+            const r = parseInt(el.dataset.replicas || '1');
+            const s = parseInt(el.dataset.shards || '1');
+            const c = parseInt(el.dataset.cpuCores || '0');
+            if (r > 1) b.replicas = r;
+            if (s > 1) b.shards = s;
+            if (c > 0) b.cpu_cores = c;
+            return b;
+        });
         const topoEdges = edges.map(e => ({ from: e.from.id, to: e.to.id }));
         return { blocks: topoBlocks, edges: topoEdges, rps, read_ratio: readRatio };
     }
@@ -667,6 +712,87 @@
         document.getElementById('stat-degraded').textContent = yellow;
         document.getElementById('stat-failing').textContent = red;
     }
+    // --- Block config panel ---
+    const storageKinds = new Set(['sql_datastore', 'redis', 'kv_store', 'docstore', 'elasticsearch', 's3']);
+    let configTarget = null;
+    const configPanel = document.getElementById('config-panel');
+    const configReplicas = document.getElementById('config-replicas');
+    const configShards = document.getElementById('config-shards');
+    const configCPU = document.getElementById('config-cpu');
+    const configReplicasVal = document.getElementById('config-replicas-val');
+    const configShardsVal = document.getElementById('config-shards-val');
+    const configCPUVal = document.getElementById('config-cpu-val');
+
+    configReplicas.addEventListener('input', () => {
+        configReplicasVal.textContent = configReplicas.value;
+        applyConfig();
+    });
+    configShards.addEventListener('input', () => {
+        configShardsVal.textContent = configShards.value;
+        applyConfig();
+    });
+    configCPU.addEventListener('input', () => {
+        configCPUVal.textContent = configCPU.value === '0' ? 'default' : configCPU.value;
+        applyConfig();
+    });
+
+    function showConfigPanel(el) {
+        configTarget = el;
+        const kind = el.dataset.kind;
+        document.getElementById('config-title').textContent = el.querySelector('span').textContent;
+
+        configReplicas.value = el.dataset.replicas || '1';
+        configReplicasVal.textContent = configReplicas.value;
+
+        const shardsRow = document.getElementById('config-shards-row');
+        if (storageKinds.has(kind)) {
+            shardsRow.classList.remove('hidden');
+            configShards.value = el.dataset.shards || '1';
+            configShardsVal.textContent = configShards.value;
+        } else {
+            shardsRow.classList.add('hidden');
+        }
+
+        configCPU.value = el.dataset.cpuCores || '0';
+        configCPUVal.textContent = configCPU.value === '0' ? 'default' : configCPU.value;
+
+        configPanel.classList.remove('hidden');
+    }
+
+    function closeConfigPanel() {
+        configPanel.classList.add('hidden');
+        configTarget = null;
+    }
+
+    function applyConfig() {
+        if (!configTarget) return;
+        configTarget.dataset.replicas = configReplicas.value;
+        configTarget.dataset.shards = configShards.value;
+        configTarget.dataset.cpuCores = configCPU.value;
+        updateBadge(configTarget);
+    }
+
+    function updateBadge(el) {
+        let badge = el.querySelector('.scale-badge');
+        const r = parseInt(el.dataset.replicas || '1');
+        const s = parseInt(el.dataset.shards || '1');
+        const parts = [];
+        if (r > 1) parts.push(r + 'r');
+        if (s > 1) parts.push(s + 's');
+        const label = parts.join(' ');
+
+        if (label) {
+            if (!badge) {
+                badge = document.createElement('div');
+                badge.className = 'scale-badge absolute -top-2 -right-2 bg-blue-600 text-white rounded-full px-1.5 py-0.5 text-[8px] font-bold leading-none whitespace-nowrap';
+                el.appendChild(badge);
+            }
+            badge.textContent = label;
+        } else if (badge) {
+            badge.remove();
+        }
+    }
+
     // --- Presets ---
     document.getElementById('preset-netflix').addEventListener('click', () => {
         // Clear canvas
