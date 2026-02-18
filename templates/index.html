@@ -60,9 +60,15 @@
     <header class="h-11 bg-gray-900 border-b border-gray-800 flex items-center px-4 gap-3 shrink-0">
         <span class="text-sm font-semibold tracking-wide text-gray-200">Archimedes</span>
         <span class="text-[10px] text-gray-600 hidden sm:inline">System Design Playground</span>
-        <button id="preset-netflix"
-                class="ml-4 px-2.5 py-1 text-[11px] rounded bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
-                title="Load Netflix architecture preset">Netflix</button>
+        <div class="ml-4 flex items-center gap-1">
+            <span class="text-[9px] text-gray-600 mr-1">Presets</span>
+            <button id="preset-netflix"
+                    class="px-2 py-0.5 text-[10px] rounded bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
+                    title="Load Netflix architecture">Netflix</button>
+            <button id="preset-ecommerce"
+                    class="px-2 py-0.5 text-[10px] rounded bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
+                    title="Load e-commerce architecture">E-Commerce</button>
+        </div>
         <div class="ml-auto flex items-center gap-3">
             <button id="play-btn"
                     class="w-9 h-9 flex items-center justify-center rounded-full bg-gray-800 hover:bg-gray-700 transition-colors border border-gray-700"
@@ -806,8 +812,7 @@
     }
 
     // --- Presets ---
-    document.getElementById('preset-netflix').addEventListener('click', () => {
-        // Clear canvas
+    function clearCanvas() {
         for (let i = edges.length - 1; i >= 0; i--) {
             removeEdgeDOM(edges[i]);
             edges.splice(i, 1);
@@ -815,25 +820,93 @@
         canvas.querySelectorAll('[data-kind]').forEach(el => el.remove());
         deselect();
         deselectEdge();
+        closeConfigPanel();
         nextId = 0;
+    }
 
-        const layout = [
-            { kind: 'user',           name: 'User',           x: 100,  y: 300 },
-            { kind: 'cdn',            name: 'CDN',            x: 250,  y: 300 },
-            { kind: 'load_balancer',  name: 'Load Balancer',  x: 400,  y: 300 },
-            { kind: 'api_gateway',    name: 'API Gateway',    x: 560,  y: 300 },
-            { kind: 'service',        name: 'Service',        x: 730,  y: 300 },
-            { kind: 'redis',          name: 'Redis',          x: 910,  y: 140 },
-            { kind: 'sql_datastore',  name: 'SQL Datastore',  x: 910,  y: 300 },
-            { kind: 'kv_store',       name: 'KV Store',       x: 910,  y: 460 },
-            { kind: 'kafka',          name: 'Kafka',          x: 730,  y: 520 },
-            { kind: 'worker',         name: 'Worker',         x: 560,  y: 620 },
-            { kind: 'elasticsearch',  name: 'Elasticsearch',  x: 400,  y: 620 },
-            { kind: 's3',             name: 'Object Storage', x: 250,  y: 620 },
-        ];
+    function loadPreset(preset) {
+        clearCanvas();
+        const els = [];
+        for (const b of preset.blocks) {
+            addBlock(b.kind, b.name, b.x, b.y);
+            els.push(document.getElementById('block-' + nextId));
+        }
+        for (const [fromIdx, toIdx] of preset.edges) {
+            if (els[fromIdx] && els[toIdx]) connect(els[fromIdx], els[toIdx]);
+        }
+    }
 
-        for (const b of layout) addBlock(b.kind, b.name, b.x, b.y);
-    });
+    // Edges use block indices (position in blocks array)
+    const presets = {
+        netflix: {
+            // 0:User 1:CDN 2:LB 3:GW 4:Service 5:Redis 6:SQL 7:KV 8:Kafka 9:Worker 10:ES 11:S3
+            blocks: [
+                { kind: 'user',           name: 'User',           x: 100,  y: 300 },
+                { kind: 'cdn',            name: 'CDN',            x: 250,  y: 300 },
+                { kind: 'load_balancer',  name: 'Load Balancer',  x: 400,  y: 300 },
+                { kind: 'api_gateway',    name: 'API Gateway',    x: 560,  y: 300 },
+                { kind: 'service',        name: 'Service',        x: 730,  y: 300 },
+                { kind: 'redis',          name: 'Redis',          x: 910,  y: 140 },
+                { kind: 'sql_datastore',  name: 'SQL Datastore',  x: 910,  y: 300 },
+                { kind: 'kv_store',       name: 'KV Store',       x: 910,  y: 460 },
+                { kind: 'kafka',          name: 'Kafka',          x: 730,  y: 520 },
+                { kind: 'worker',         name: 'Worker',         x: 560,  y: 620 },
+                { kind: 'elasticsearch',  name: 'Elasticsearch',  x: 400,  y: 620 },
+                { kind: 's3',             name: 'Object Storage', x: 250,  y: 620 },
+            ],
+            edges: [
+                [0, 1],   // User → CDN
+                [1, 2],   // CDN → LB
+                [2, 3],   // LB → API GW
+                [3, 4],   // API GW → Service
+                [4, 5],   // Service → Redis
+                [4, 6],   // Service → SQL
+                [4, 7],   // Service → KV Store
+                [4, 8],   // Service → Kafka
+                [8, 9],   // Kafka → Worker
+                [9, 10],  // Worker → Elasticsearch
+                [9, 11],  // Worker → S3
+            ],
+        },
+        ecommerce: {
+            // 0:User 1:CDN 2:LB 3:GW 4:ProductAPI 5:OrderAPI 6:SessionCache 7:Search
+            // 8:ProductDB 9:OrderDB 10:OrderEvents 11:Fulfillment 12:Inventory 13:Images
+            blocks: [
+                { kind: 'user',           name: 'User',            x: 100,  y: 300 },
+                { kind: 'cdn',            name: 'CDN',             x: 250,  y: 180 },
+                { kind: 'load_balancer',  name: 'Load Balancer',   x: 400,  y: 300 },
+                { kind: 'api_gateway',    name: 'API Gateway',     x: 560,  y: 300 },
+                { kind: 'service',        name: 'Product API',     x: 730,  y: 180 },
+                { kind: 'service',        name: 'Order API',       x: 730,  y: 420 },
+                { kind: 'redis',          name: 'Session Cache',   x: 560,  y: 140 },
+                { kind: 'elasticsearch',  name: 'Product Search',  x: 910,  y: 100 },
+                { kind: 'sql_datastore',  name: 'Product DB',      x: 910,  y: 250 },
+                { kind: 'sql_datastore',  name: 'Order DB',        x: 910,  y: 420 },
+                { kind: 'kafka',          name: 'Order Events',    x: 730,  y: 560 },
+                { kind: 'worker',         name: 'Fulfillment',     x: 560,  y: 560 },
+                { kind: 'kv_store',       name: 'Inventory',       x: 910,  y: 560 },
+                { kind: 's3',             name: 'Product Images',  x: 250,  y: 460 },
+            ],
+            edges: [
+                [0, 1],   // User → CDN (static assets)
+                [0, 2],   // User → LB (API requests)
+                [1, 13],  // CDN → S3 (product images)
+                [2, 3],   // LB → API Gateway
+                [3, 6],   // API GW → Session Cache
+                [3, 4],   // API GW → Product API
+                [3, 5],   // API GW → Order API
+                [4, 7],   // Product API → Product Search
+                [4, 8],   // Product API → Product DB
+                [5, 9],   // Order API → Order DB
+                [5, 10],  // Order API → Order Events
+                [10, 11], // Order Events → Fulfillment Worker
+                [11, 12], // Fulfillment → Inventory KV
+            ],
+        },
+    };
+
+    document.getElementById('preset-netflix').addEventListener('click', () => loadPreset(presets.netflix));
+    document.getElementById('preset-ecommerce').addEventListener('click', () => loadPreset(presets.ecommerce));
     </script>
 
 </body>
