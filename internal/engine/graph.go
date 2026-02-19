@@ -5,13 +5,18 @@ import (
 	"fmt"
 )
 
+type OutEdge struct {
+	To     string
+	Weight float64 // fraction of traffic (0.0–1.0), default 1.0
+}
+
 type Node struct {
 	ID       string
 	Kind     string
 	Replicas int
 	Shards   int
 	CPUCores int
-	outgoing []string
+	outgoing []OutEdge
 }
 
 type Graph struct {
@@ -28,8 +33,9 @@ type TopoBlock struct {
 }
 
 type TopoEdge struct {
-	From string `json:"from"`
-	To   string `json:"to"`
+	From   string  `json:"from"`
+	To     string  `json:"to"`
+	Weight float64 `json:"weight,omitempty"` // 0.0–1.0, default 1.0
 }
 
 type Topology struct {
@@ -72,7 +78,11 @@ func BuildGraph(topo Topology) (*Graph, error) {
 		if _, ok := g.nodes[e.To]; !ok {
 			return nil, fmt.Errorf("unknown block %q in edge", e.To)
 		}
-		from.outgoing = append(from.outgoing, e.To)
+		w := e.Weight
+		if w <= 0 {
+			w = 1.0
+		}
+		from.outgoing = append(from.outgoing, OutEdge{To: e.To, Weight: w})
 		g.incoming[e.To]++
 	}
 
@@ -89,8 +99,8 @@ func (g *Graph) Downstream(id string) []*Node {
 		return nil
 	}
 	out := make([]*Node, len(node.outgoing))
-	for i, oid := range node.outgoing {
-		out[i] = g.nodes[oid]
+	for i, oe := range node.outgoing {
+		out[i] = g.nodes[oe.To]
 	}
 	return out
 }
@@ -125,10 +135,10 @@ func (g *Graph) TopoOrder() ([]string, error) {
 		id := queue[0]
 		queue = queue[1:]
 		order = append(order, id)
-		for _, down := range g.nodes[id].outgoing {
-			deg[down]--
-			if deg[down] == 0 {
-				queue = append(queue, down)
+		for _, oe := range g.nodes[id].outgoing {
+			deg[oe.To]--
+			if deg[oe.To] == 0 {
+				queue = append(queue, oe.To)
 			}
 		}
 	}
