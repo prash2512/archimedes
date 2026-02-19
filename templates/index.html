@@ -182,6 +182,19 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Edge config panel -->
+            <div id="edge-config-panel" class="absolute bg-gray-900 border border-gray-700 rounded-lg p-3 w-44 shadow-lg z-50 hidden">
+                <div class="flex justify-between items-center mb-2.5">
+                    <span class="text-[11px] font-semibold text-gray-200">Edge Weight</span>
+                    <button onclick="closeEdgeConfig()" class="text-gray-500 hover:text-gray-300 text-sm leading-none">&times;</button>
+                </div>
+                <div class="flex justify-between text-[10px] mb-1">
+                    <span class="text-gray-500">Traffic %</span>
+                    <span id="edge-weight-val" class="text-gray-300 tabular-nums">100%</span>
+                </div>
+                <input type="range" id="edge-weight-slider" min="5" max="100" value="100" step="5" class="w-full">
+            </div>
         </main>
 
     </div>
@@ -250,7 +263,7 @@
     });
 
     canvas.addEventListener('click', (e) => {
-        if (e.target === canvas) { deselect(); deselectEdge(); closeConfigPanel(); }
+        if (e.target === canvas) { deselect(); deselectEdge(); closeConfigPanel(); closeEdgeConfig(); }
     });
 
     document.addEventListener('keydown', (e) => {
@@ -377,9 +390,16 @@
         line.setAttribute('stroke-dasharray', '6 4');
         line.setAttribute('marker-end', 'url(#arrow-blue)');
 
+        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        label.setAttribute('font-size', '10');
+        label.setAttribute('fill', '#9ca3af');
+        label.setAttribute('text-anchor', 'middle');
+        label.setAttribute('pointer-events', 'none');
+
         svg.appendChild(line);
         svg.appendChild(hit);
-        const edge = { from, to, line, hit };
+        svg.appendChild(label);
+        const edge = { from, to, line, hit, label, weight: 1.0 };
         edges.push(edge);
         drawEdge(edge);
 
@@ -402,6 +422,11 @@
             });
             line.setAttribute('stroke-opacity', '1');
         });
+        hit.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            showEdgeConfig(edge, e.clientX, e.clientY);
+        });
     }
 
     function deselectEdge() {
@@ -418,6 +443,7 @@
     function removeEdgeDOM(edge) {
         edge.line.remove();
         edge.hit.remove();
+        if (edge.label) edge.label.remove();
         if (edge.handles) {
             edge.handles.forEach(h => h.remove());
             edge.handles = null;
@@ -460,6 +486,10 @@
             el.setAttribute('x1', a.x); el.setAttribute('y1', a.y);
             el.setAttribute('x2', b.x); el.setAttribute('y2', b.y);
         }
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        edge.label.setAttribute('x', mx);
+        edge.label.setAttribute('y', my - 6);
+        edge.label.textContent = edge.weight < 1 ? Math.round(edge.weight * 100) + '%' : '';
     }
 
     function updateEdges(el) {
@@ -523,7 +553,11 @@
             if (c > 0) b.cpu_cores = c;
             return b;
         });
-        const topoEdges = edges.map(e => ({ from: e.from.id, to: e.to.id }));
+        const topoEdges = edges.map(e => {
+            const te = { from: e.from.id, to: e.to.id };
+            if (e.weight < 1) te.weight = e.weight;
+            return te;
+        });
         return { blocks: topoBlocks, edges: topoEdges, rps, read_ratio: readRatio };
     }
 
@@ -802,6 +836,41 @@
         });
     }
 
+    // --- Edge config ---
+    let edgeConfigTarget = null;
+    const edgeConfigPanel = document.getElementById('edge-config-panel');
+    const edgeWeightSlider = document.getElementById('edge-weight-slider');
+    const edgeWeightVal = document.getElementById('edge-weight-val');
+
+    edgeWeightSlider.addEventListener('input', () => {
+        edgeWeightVal.textContent = edgeWeightSlider.value + '%';
+        if (edgeConfigTarget) {
+            edgeConfigTarget.weight = parseInt(edgeWeightSlider.value) / 100;
+            drawEdge(edgeConfigTarget);
+            sendTopologyUpdate();
+        }
+    });
+
+    function showEdgeConfig(edge, mouseX, mouseY) {
+        closeConfigPanel();
+        edgeConfigTarget = edge;
+        edgeWeightSlider.value = Math.round(edge.weight * 100);
+        edgeWeightVal.textContent = Math.round(edge.weight * 100) + '%';
+        const canvasRect = canvas.getBoundingClientRect();
+        let left = mouseX - canvasRect.left + 10;
+        let top = mouseY - canvasRect.top + 10;
+        left = Math.min(left, canvasRect.width - 190);
+        top = Math.min(top, canvasRect.height - 100);
+        edgeConfigPanel.style.left = left + 'px';
+        edgeConfigPanel.style.top = top + 'px';
+        edgeConfigPanel.classList.remove('hidden');
+    }
+
+    function closeEdgeConfig() {
+        edgeConfigPanel.classList.add('hidden');
+        edgeConfigTarget = null;
+    }
+
     function updateBadge(el) {
         let badge = el.querySelector('.scale-badge');
         const r = parseInt(el.dataset.replicas || '1');
@@ -833,6 +902,7 @@
         deselect();
         deselectEdge();
         closeConfigPanel();
+        closeEdgeConfig();
         nextId = 0;
     }
 
@@ -843,8 +913,16 @@
             addBlock(b.kind, b.name, b.x, b.y);
             els.push(document.getElementById('block-' + nextId));
         }
-        for (const [fromIdx, toIdx] of preset.edges) {
-            if (els[fromIdx] && els[toIdx]) connect(els[fromIdx], els[toIdx]);
+        for (const e of preset.edges) {
+            const [fromIdx, toIdx, weight] = e;
+            if (els[fromIdx] && els[toIdx]) {
+                connect(els[fromIdx], els[toIdx]);
+                if (weight != null && weight < 1) {
+                    const edge = edges[edges.length - 1];
+                    edge.weight = weight;
+                    drawEdge(edge);
+                }
+            }
         }
     }
 
@@ -867,17 +945,17 @@
                 { kind: 's3',             name: 'Object Storage', x: 250,  y: 620 },
             ],
             edges: [
-                [0, 1],   // User → CDN
-                [1, 2],   // CDN → LB
-                [2, 3],   // LB → API GW
-                [3, 4],   // API GW → Service
-                [4, 5],   // Service → Redis
-                [4, 6],   // Service → SQL
-                [4, 7],   // Service → KV Store
-                [4, 8],   // Service → Kafka
-                [8, 9],   // Kafka → Worker
-                [9, 10],  // Worker → Elasticsearch
-                [9, 11],  // Worker → S3
+                [0, 1],          // User → CDN
+                [1, 2],          // CDN → LB
+                [2, 3],          // LB → API GW
+                [3, 4],          // API GW → Service
+                [4, 5, 0.90],   // Service → Redis (90% — cache check)
+                [4, 6, 0.30],   // Service → SQL (30% — cache misses + writes)
+                [4, 7, 0.15],   // Service → KV Store (15% — session/metadata)
+                [4, 8, 0.05],   // Service → Kafka (5% — async events)
+                [8, 9],          // Kafka → Worker
+                [9, 10, 0.80],  // Worker → Elasticsearch (80%)
+                [9, 11, 0.40],  // Worker → S3 (40%)
             ],
         },
         ecommerce: {
@@ -900,19 +978,19 @@
                 { kind: 's3',             name: 'Product Images',  x: 250,  y: 460 },
             ],
             edges: [
-                [0, 1],   // User → CDN (static assets)
-                [0, 2],   // User → LB (API requests)
-                [1, 13],  // CDN → S3 (product images)
-                [2, 3],   // LB → API Gateway
-                [3, 6],   // API GW → Session Cache
-                [3, 4],   // API GW → Product API
-                [3, 5],   // API GW → Order API
-                [4, 7],   // Product API → Product Search
-                [4, 8],   // Product API → Product DB
-                [5, 9],   // Order API → Order DB
-                [5, 10],  // Order API → Order Events
-                [10, 11], // Order Events → Fulfillment Worker
-                [11, 12], // Fulfillment → Inventory KV
+                [0, 1, 0.30],   // User → CDN (30% — static assets)
+                [0, 2, 0.70],   // User → LB (70% — API requests)
+                [1, 13],         // CDN → S3 (product images)
+                [2, 3],          // LB → API Gateway
+                [3, 6, 0.95],   // API GW → Session Cache (95% — auth check)
+                [3, 4, 0.60],   // API GW → Product API (60% — browsing)
+                [3, 5, 0.25],   // API GW → Order API (25% — purchases)
+                [4, 7, 0.40],   // Product API → Product Search (40%)
+                [4, 8, 0.80],   // Product API → Product DB (80%)
+                [5, 9],          // Order API → Order DB
+                [5, 10, 0.90],  // Order API → Order Events (90%)
+                [10, 11],        // Order Events → Fulfillment Worker
+                [11, 12],        // Fulfillment → Inventory KV
             ],
         },
     };
