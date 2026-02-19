@@ -394,6 +394,67 @@ func TestSQLConnPoolSaturation(t *testing.T) {
 	}
 }
 
+func TestEdgeWeightSplitsTraffic(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "a", Kind: "service"},
+			{ID: "b", Kind: "service"},
+		},
+		Edges: []TopoEdge{
+			{From: "u", To: "a", Weight: 0.3},
+			{From: "u", To: "b", Weight: 0.7},
+		},
+	})
+	results, _ := Simulate(g, 10000, 0.5)
+	var rpsA, rpsB float64
+	for _, r := range results {
+		if r.ID == "a" {
+			rpsA = r.RPS
+		}
+		if r.ID == "b" {
+			rpsB = r.RPS
+		}
+	}
+	if math.Abs(rpsA-3000) > 100 {
+		t.Errorf("service A should get ~3000 RPS, got %g", rpsA)
+	}
+	if math.Abs(rpsB-7000) > 100 {
+		t.Errorf("service B should get ~7000 RPS, got %g", rpsB)
+	}
+}
+
+func TestCDNAbsorbsDownstreamTraffic(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "cdn", Kind: "cdn"},
+			{ID: "svc", Kind: "service"},
+		},
+		Edges: []TopoEdge{
+			{From: "u", To: "cdn"},
+			{From: "cdn", To: "svc"},
+		},
+	})
+	state := NewSimState(g)
+
+	// Warm up CDN cache
+	for range 50 {
+		SimulateTick(g, 5000, 0.9, state)
+	}
+	results, _ := SimulateTick(g, 5000, 0.9, state)
+	var svcRPS float64
+	for _, r := range results {
+		if r.ID == "svc" {
+			svcRPS = r.RPS
+		}
+	}
+	// CDN should absorb most read traffic, so service sees much less than 5000
+	if svcRPS > 3000 {
+		t.Errorf("CDN should absorb traffic, but service sees %g RPS", svcRPS)
+	}
+}
+
 func mustGraph(t *testing.T, topo Topology) *Graph {
 	t.Helper()
 	g, err := BuildGraph(topo)
