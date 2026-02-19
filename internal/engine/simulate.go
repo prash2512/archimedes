@@ -132,8 +132,9 @@ func SimulateTick(g *Graph, rps float64, readRatio float64, state *SimState) ([]
 		}
 		results = append(results, br)
 
+		forwarded := processed * (1 - effect.AbsorbRatio)
 		for _, oe := range node.outgoing {
-			arriving[oe.To] += processed * oe.Weight
+			arriving[oe.To] += forwarded * oe.Weight
 		}
 	}
 	return results, nil

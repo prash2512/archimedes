@@ -55,10 +55,16 @@ func (Redis) Tick(ctx blocks.TickContext) blocks.TickEffect {
 
 	if memPct > evictThresh {
 		evicting = 1.0
-		// Eviction pressure: the further past threshold, the more CPU it steals.
 		pressure := (memPct - evictThresh) / (1 - evictThresh)
-		e.CapMultiplier = 1.0 - 0.5*pressure // down to 0.5x at full memory
+		e.CapMultiplier = 1.0 - 0.5*pressure
 		e.Latency = cpuPerOp * 1000 * (1 + 3*pressure)
+	}
+
+	total := ctx.Reads + ctx.Writes
+	if total > 0 {
+		hitRate := math.Min(memPct/evictThresh, 0.95)
+		readFrac := ctx.Reads / total
+		e.AbsorbRatio = hitRate * readFrac
 	}
 
 	e.Metrics = map[string]float64{"memory_pct": memPct, "evicting": evicting}

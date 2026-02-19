@@ -54,10 +54,11 @@ type TickContext struct {
 }
 
 type TickEffect struct {
-	CapMultiplier float64            // multiply effective capacity (1.0 = no change)
-	Latency       float64            // estimated p50 latency in ms
-	Saturated     bool               // hit a hard limit
-	Metrics       map[string]float64 // block-specific metrics for UI
+	CapMultiplier float64
+	AbsorbRatio   float64 // fraction of processed traffic not forwarded downstream
+	Latency       float64
+	Saturated     bool
+	Metrics       map[string]float64
 }
 
 var Types []Block

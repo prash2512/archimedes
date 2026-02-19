@@ -43,13 +43,14 @@ func (CDN) Tick(ctx TickContext) TickEffect {
 	ratio = math.Max(0, math.Min(1, ratio))
 	ctx.State["hit_ratio"] = ratio
 
-	// High hit ratio reduces effective load (cache absorbs it).
-	// Model as capacity multiplier: more hits = more headroom.
-	capMult := 1.0 + ratio*4.0 // up to 5x effective capacity at 100% hit
+	capMult := 1.0 + ratio*4.0
+	readFrac := ctx.Reads / math.Max(total, 1)
+	absorbed := ratio * readFrac
 
 	return TickEffect{
 		CapMultiplier: capMult,
-		Latency:       cdnCPUPerReq * 1000 * (1 - 0.8*ratio), // cache hits are faster
+		AbsorbRatio:   absorbed,
+		Latency:       cdnCPUPerReq * 1000 * (1 - 0.8*ratio),
 		Metrics:       map[string]float64{"hit_ratio": ratio},
 	}
 }
