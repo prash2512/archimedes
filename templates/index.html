@@ -790,6 +790,16 @@
         configTarget.dataset.shards = configShards.value;
         configTarget.dataset.cpuCores = configCPU.value;
         updateBadge(configTarget);
+        sendTopologyUpdate();
+    }
+
+    function sendTopologyUpdate() {
+        if (!playing) return;
+        fetch('/api/topology/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(buildTopology())
+        });
     }
 
     function updateBadge(el) {

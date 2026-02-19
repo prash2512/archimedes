@@ -95,6 +95,33 @@ func (s *Sim) UpdateRPS(rps float64, readRatio float64) {
 	s.readRatio = readRatio
 }
 
+func (s *Sim) UpdateTopology(topo Topology) error {
+	g, err := BuildGraph(topo)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.running {
+		return nil
+	}
+
+	old := s.state
+	s.graph = g
+	s.state = NewSimState(g)
+	for id, bs := range old.Blocks {
+		if nbs, ok := s.state.Blocks[id]; ok {
+			nbs.Queue = bs.Queue
+			for k, v := range bs.Extra {
+				nbs.Extra[k] = v
+			}
+		}
+	}
+	s.rps = topo.RPS
+	s.readRatio = topo.ReadRatio
+	return nil
+}
+
 func (s *Sim) broadcast(tr TickResult) {
 	for _, ch := range s.subs {
 		select {

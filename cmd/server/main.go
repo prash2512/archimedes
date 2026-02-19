@@ -79,6 +79,19 @@ func main() {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	mux.HandleFunc("POST /api/topology/update", func(w http.ResponseWriter, r *http.Request) {
+		var topo engine.Topology
+		if err := json.NewDecoder(r.Body).Decode(&topo); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := sim.UpdateTopology(topo); err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	mux.HandleFunc("POST /api/pause", func(w http.ResponseWriter, r *http.Request) {
 		sim.Pause()
 		w.WriteHeader(http.StatusNoContent)
