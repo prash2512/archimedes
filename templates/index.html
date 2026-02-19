@@ -744,6 +744,7 @@
     });
 
     function showConfigPanel(el, mouseX, mouseY) {
+        if (el.dataset.kind === 'user') return;
         configTarget = el;
         const kind = el.dataset.kind;
         document.getElementById('config-title').textContent = el.querySelector('span').textContent;
