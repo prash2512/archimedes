@@ -21,14 +21,15 @@ type OpCost struct {
 }
 
 type Profile struct {
-	CPUCores        int
-	MemoryMB        int
-	DiskIOPS        int
-	Read            OpCost
-	Write           OpCost
-	MaxConcurrency  int
-	BufferPoolRatio float64
-	Durability      Durability
+	CPUCores         int
+	MemoryMB         int
+	DiskIOPS         int
+	Read             OpCost
+	Write            OpCost
+	MaxConcurrency   int
+	BufferPoolRatio  float64
+	Durability       Durability
+	DefaultReadRatio float64 // 0 = use global, otherwise block's natural ratio
 }
 
 type Block interface {

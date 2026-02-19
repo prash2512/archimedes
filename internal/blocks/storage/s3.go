@@ -26,7 +26,8 @@ func (S3) Profile() blocks.Profile {
 		DiskIOPS:       50000, // effectively unlimited IOPS
 		Read:           blocks.OpCost{CPUMs: 0.1, MemoryMB: s3ReadMB, DiskIOs: 1},
 		Write:          blocks.OpCost{CPUMs: 0.2, MemoryMB: s3WriteMB, DiskIOs: 1},
-		MaxConcurrency: s3RateLimit,
+		MaxConcurrency:   s3RateLimit,
+		DefaultReadRatio: 0.6,
 	}
 }
 

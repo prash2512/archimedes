@@ -21,7 +21,8 @@ func (CDN) Profile() Profile {
 		MemoryMB:       cdnCacheMemMB,
 		Read:           OpCost{CPUMs: cdnCPUPerReq, MemoryMB: 0.001},
 		Write:          OpCost{CPUMs: cdnCPUPerReq, MemoryMB: 0.001},
-		MaxConcurrency: cdnEdgePool,
+		MaxConcurrency:   cdnEdgePool,
+		DefaultReadRatio: 0.95,
 	}
 }
 

@@ -79,22 +79,27 @@ func SimulateTick(g *Graph, rps float64, readRatio float64, state *SimState) ([]
 		bs := state.Blocks[id]
 
 		total := bs.Queue + arriving[id]
-		rawCap := nodeCapacity(node, readRatio) * tickDt
 
-		// Apply block-specific behavior if it implements Ticker.
+		blockRR := readRatio
 		var effect blocks.TickEffect
 		if b, ok := blocks.ByKind(node.Kind); ok {
+			p := b.Profile()
+			if p.DefaultReadRatio > 0 {
+				blockRR = p.DefaultReadRatio
+			}
 			if ticker, ok := b.(blocks.Ticker); ok {
 				effect = ticker.Tick(blocks.TickContext{
-					Reads:  total * readRatio,
-					Writes: total * (1 - readRatio),
-					RawCap: rawCap,
+					Reads:  total * blockRR,
+					Writes: total * (1 - blockRR),
+					RawCap: nodeCapacity(node, blockRR) * tickDt,
 					Dt:     tickDt,
 					State:  bs.Extra,
 					Tick:   state.CurrentTick,
 				})
 			}
 		}
+
+		rawCap := nodeCapacity(node, blockRR) * tickDt
 
 		// Apply capacity modifier from block behavior.
 		if effect.CapMultiplier > 0 {
@@ -121,7 +126,7 @@ func SimulateTick(g *Graph, rps float64, readRatio float64, state *SimState) ([]
 		}
 
 		effectiveRPS := processed / tickDt
-		br := computeBlock(node, effectiveRPS, readRatio)
+		br := computeBlock(node, effectiveRPS, blockRR)
 		br.QueueDepth = bs.Queue
 		br.Dropped = dropped
 		br.Latency = effect.Latency

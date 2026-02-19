@@ -30,7 +30,8 @@ func (Elasticsearch) Profile() blocks.Profile {
 		Write:    blocks.OpCost{CPUMs: 2.0, MemoryMB: 1.0, DiskIOs: invertedIndexWriteIOs},
 		MaxConcurrency:  threadPool,
 		BufferPoolRatio: bufferPool,
-		Durability:      blocks.DurabilityBatch,
+		Durability:       blocks.DurabilityBatch,
+		DefaultReadRatio: 0.8,
 	}
 }
 

@@ -28,7 +28,8 @@ func (Kafka) Profile() blocks.Profile {
 		Read:     blocks.OpCost{CPUMs: cpuPerOp, MemoryMB: 0.01, DiskIOs: appendLogIOs, Sequential: true},
 		Write:    blocks.OpCost{CPUMs: cpuPerOp, MemoryMB: 0.01, DiskIOs: appendLogIOs, Sequential: true},
 		MaxConcurrency: brokerConns,
-		Durability:     blocks.DurabilityBatch,
+		Durability:       blocks.DurabilityBatch,
+		DefaultReadRatio: 0.1,
 	}
 }
 

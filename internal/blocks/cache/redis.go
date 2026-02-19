@@ -27,7 +27,8 @@ func (Redis) Profile() blocks.Profile {
 		Read:     blocks.OpCost{CPUMs: cpuPerOp, MemoryMB: memPerWrite},
 		Write:    blocks.OpCost{CPUMs: cpuPerOp, MemoryMB: memPerWrite},
 		MaxConcurrency: singleThread,
-		Durability:     blocks.DurabilityNone,
+		Durability:       blocks.DurabilityNone,
+		DefaultReadRatio: 0.95,
 	}
 }
 

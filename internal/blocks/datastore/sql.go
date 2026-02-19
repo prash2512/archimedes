@@ -30,7 +30,8 @@ func (SQL) Profile() blocks.Profile {
 		Write:    blocks.OpCost{CPUMs: 1.0, MemoryMB: 0.5, DiskIOs: bTreeWriteIOs},
 		MaxConcurrency:  maxConns,
 		BufferPoolRatio: bufferPool,
-		Durability:      blocks.DurabilityPerWrite,
+		Durability:       blocks.DurabilityPerWrite,
+		DefaultReadRatio: 0.7,
 	}
 }
 
