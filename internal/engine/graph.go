@@ -6,8 +6,9 @@ import (
 )
 
 type OutEdge struct {
-	To     string
-	Weight float64 // fraction of traffic (0.0–1.0), default 1.0
+	To         string
+	Weight     float64
+	Multiplier float64
 }
 
 type Node struct {
@@ -35,9 +36,10 @@ type TopoBlock struct {
 }
 
 type TopoEdge struct {
-	From   string  `json:"from"`
-	To     string  `json:"to"`
-	Weight float64 `json:"weight,omitempty"` // 0.0–1.0, default 1.0
+	From       string  `json:"from"`
+	To         string  `json:"to"`
+	Weight     float64 `json:"weight,omitempty"`
+	Multiplier float64 `json:"multiplier,omitempty"`
 }
 
 type Topology struct {
@@ -85,7 +87,11 @@ func BuildGraph(topo Topology) (*Graph, error) {
 		if w <= 0 {
 			w = 1.0
 		}
-		from.outgoing = append(from.outgoing, OutEdge{To: e.To, Weight: w})
+		m := e.Multiplier
+		if m <= 0 {
+			m = 1.0
+		}
+		from.outgoing = append(from.outgoing, OutEdge{To: e.To, Weight: w, Multiplier: m})
 		g.incoming[e.To]++
 	}
 

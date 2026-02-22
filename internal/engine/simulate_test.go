@@ -455,6 +455,71 @@ func TestCDNAbsorbsDownstreamTraffic(t *testing.T) {
 	}
 }
 
+func TestEdgeMultiplierFanOut(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "s", Kind: "service"},
+		},
+		Edges: []TopoEdge{{From: "u", To: "s", Multiplier: 10}},
+	})
+	results, _ := Simulate(g, 1000, 1.0)
+	for _, r := range results {
+		if r.ID == "s" && !approx(r.RPS, 10000) {
+			t.Errorf("want 10000 RPS, got %g", r.RPS)
+		}
+	}
+}
+
+func TestEdgeMultiplierWithWeight(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "s", Kind: "service"},
+		},
+		Edges: []TopoEdge{{From: "u", To: "s", Weight: 0.5, Multiplier: 4}},
+	})
+	results, _ := Simulate(g, 1000, 1.0)
+	for _, r := range results {
+		if r.ID == "s" && !approx(r.RPS, 2000) {
+			t.Errorf("want 2000 RPS, got %g", r.RPS)
+		}
+	}
+}
+
+func TestEdgeMultiplierDefaultsToOne(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "s", Kind: "service"},
+		},
+		Edges: []TopoEdge{{From: "u", To: "s"}},
+	})
+	results, _ := Simulate(g, 1000, 1.0)
+	for _, r := range results {
+		if r.ID == "s" && !approx(r.RPS, 1000) {
+			t.Errorf("want 1000 RPS, got %g", r.RPS)
+		}
+	}
+}
+
+func TestEdgeMultiplierTickMode(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "s", Kind: "service"},
+		},
+		Edges: []TopoEdge{{From: "u", To: "s", Multiplier: 10}},
+	})
+	state := NewSimState(g)
+	results, _ := SimulateTick(g, 1000, 1.0, state)
+	for _, r := range results {
+		if r.ID == "s" && r.RPS < 5000 {
+			t.Errorf("want high RPS from multiplier, got %g", r.RPS)
+		}
+	}
+}
+
 func TestSimulateReturnsName(t *testing.T) {
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{

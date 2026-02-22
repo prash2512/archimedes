@@ -194,6 +194,14 @@
                     <span id="edge-weight-val" class="text-gray-300 tabular-nums">100%</span>
                 </div>
                 <input type="range" id="edge-weight-slider" min="5" max="100" value="100" step="5" class="w-full">
+                <div class="flex justify-between text-[10px] mb-1 mt-2">
+                    <span class="text-gray-500">Fan-out</span>
+                    <span id="edge-mult-val" class="text-gray-300 tabular-nums">1x</span>
+                </div>
+                <input type="range" id="edge-mult-slider" min="0" max="7" value="0" step="1" class="w-full">
+                <div class="flex justify-between text-[9px] text-gray-600 mt-0.5">
+                    <span>1x</span><span>1000x</span>
+                </div>
             </div>
         </main>
 
@@ -424,7 +432,7 @@
         svg.appendChild(line);
         svg.appendChild(hit);
         svg.appendChild(label);
-        const edge = { from, to, line, hit, label, weight: 1.0 };
+        const edge = { from, to, line, hit, label, weight: 1.0, multiplier: 1 };
         edges.push(edge);
         drawEdge(edge);
 
@@ -514,7 +522,10 @@
         const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
         edge.label.setAttribute('x', mx);
         edge.label.setAttribute('y', my - 6);
-        edge.label.textContent = edge.weight < 1 ? Math.round(edge.weight * 100) + '%' : '';
+        const parts = [];
+        if (edge.weight < 1) parts.push(Math.round(edge.weight * 100) + '%');
+        if (edge.multiplier > 1) parts.push(edge.multiplier + 'x');
+        edge.label.textContent = parts.join(' ');
     }
 
     function updateEdges(el) {
@@ -582,6 +593,7 @@
         const topoEdges = edges.map(e => {
             const te = { from: e.from.id, to: e.to.id };
             if (e.weight < 1) te.weight = e.weight;
+            if (e.multiplier > 1) te.multiplier = e.multiplier;
             return te;
         });
         return { blocks: topoBlocks, edges: topoEdges, rps, read_ratio: readRatio };
@@ -868,10 +880,24 @@
     const edgeWeightSlider = document.getElementById('edge-weight-slider');
     const edgeWeightVal = document.getElementById('edge-weight-val');
 
+    const multSteps = [1, 2, 5, 10, 50, 100, 500, 1000];
+    const edgeMultSlider = document.getElementById('edge-mult-slider');
+    const edgeMultVal = document.getElementById('edge-mult-val');
+
     edgeWeightSlider.addEventListener('input', () => {
         edgeWeightVal.textContent = edgeWeightSlider.value + '%';
         if (edgeConfigTarget) {
             edgeConfigTarget.weight = parseInt(edgeWeightSlider.value) / 100;
+            drawEdge(edgeConfigTarget);
+            sendTopologyUpdate();
+        }
+    });
+
+    edgeMultSlider.addEventListener('input', () => {
+        const val = multSteps[parseInt(edgeMultSlider.value)];
+        edgeMultVal.textContent = val + 'x';
+        if (edgeConfigTarget) {
+            edgeConfigTarget.multiplier = val;
             drawEdge(edgeConfigTarget);
             sendTopologyUpdate();
         }
@@ -882,6 +908,9 @@
         edgeConfigTarget = edge;
         edgeWeightSlider.value = Math.round(edge.weight * 100);
         edgeWeightVal.textContent = Math.round(edge.weight * 100) + '%';
+        const multIdx = multSteps.indexOf(edge.multiplier);
+        edgeMultSlider.value = multIdx >= 0 ? multIdx : 0;
+        edgeMultVal.textContent = (edge.multiplier || 1) + 'x';
         const canvasRect = canvas.getBoundingClientRect();
         let left = mouseX - canvasRect.left + 10;
         let top = mouseY - canvasRect.top + 10;
@@ -940,14 +969,14 @@
             els.push(document.getElementById('block-' + nextId));
         }
         for (const e of preset.edges) {
-            const [fromIdx, toIdx, weight] = e;
+            const [fromIdx, toIdx, weight, multiplier] = e;
             if (els[fromIdx] && els[toIdx]) {
                 connect(els[fromIdx], els[toIdx]);
-                if (weight != null && weight < 1) {
-                    const edge = edges[edges.length - 1];
-                    edge.weight = weight;
-                    drawEdge(edge);
-                }
+                const edge = edges[edges.length - 1];
+                let changed = false;
+                if (weight != null && weight < 1) { edge.weight = weight; changed = true; }
+                if (multiplier != null && multiplier > 1) { edge.multiplier = multiplier; changed = true; }
+                if (changed) drawEdge(edge);
             }
         }
     }
