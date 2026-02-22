@@ -455,6 +455,25 @@ func TestCDNAbsorbsDownstreamTraffic(t *testing.T) {
 	}
 }
 
+func TestSimulateReturnsName(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "s", Kind: "service", Name: "Video API"},
+		},
+		Edges: []TopoEdge{{From: "u", To: "s"}},
+	})
+	results, err := Simulate(g, 1000, 1.0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range results {
+		if r.ID == "s" && r.Name != "Video API" {
+			t.Errorf("want name 'Video API', got %q", r.Name)
+		}
+	}
+}
+
 func mustGraph(t *testing.T, topo Topology) *Graph {
 	t.Helper()
 	g, err := BuildGraph(topo)

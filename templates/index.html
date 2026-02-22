@@ -289,6 +289,7 @@
         const el = document.createElement('div');
         el.id = 'block-' + (++nextId);
         el.dataset.kind = kind;
+        el.dataset.name = name;
         el.className = 'block-node absolute flex flex-col items-center rounded-lg border border-gray-700 select-none cursor-move bg-gray-900/90 backdrop-blur-sm';
         el.style.left = (x - 56) + 'px';
         el.style.top = (y - 36) + 'px';
@@ -321,6 +322,30 @@
             e.preventDefault();
             e.stopPropagation();
             showConfigPanel(el, e.clientX, e.clientY);
+        });
+        el.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const span = el.querySelector('span');
+            const current = span.textContent;
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = current;
+            input.className = 'text-[11px] bg-gray-800 text-gray-200 border border-gray-600 rounded px-1 w-full text-center';
+            span.replaceWith(input);
+            input.focus();
+            input.select();
+            function commit() {
+                const val = input.value.trim() || current;
+                const ns = document.createElement('span');
+                ns.className = 'text-[11px] text-gray-300 font-medium leading-tight';
+                ns.textContent = val;
+                input.replaceWith(ns);
+                el.dataset.name = val;
+                if (playing) sendTopologyUpdate();
+            }
+            input.addEventListener('blur', commit);
+            input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') input.blur(); });
         });
         canvas.appendChild(el);
     }
@@ -545,6 +570,7 @@
         const blockEls = canvas.querySelectorAll('[data-kind]');
         const topoBlocks = Array.from(blockEls).map(el => {
             const b = { id: el.id, kind: el.dataset.kind };
+            if (el.dataset.name) b.name = el.dataset.name;
             const r = parseInt(el.dataset.replicas || '1');
             const s = parseInt(el.dataset.shards || '1');
             const c = parseInt(el.dataset.cpuCores || '0');
@@ -782,7 +808,7 @@
         if (el.dataset.kind === 'user') return;
         configTarget = el;
         const kind = el.dataset.kind;
-        document.getElementById('config-title').textContent = el.querySelector('span').textContent;
+        document.getElementById('config-title').textContent = el.dataset.name || el.querySelector('span').textContent;
 
         configReplicas.value = el.dataset.replicas || '1';
         configReplicasVal.textContent = configReplicas.value;

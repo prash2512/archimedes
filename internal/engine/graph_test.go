@@ -147,3 +147,31 @@ func TestBuildGraphBadEdge(t *testing.T) {
 		t.Fatal("expected error for unknown block in edge")
 	}
 }
+
+func TestBuildGraphPreservesName(t *testing.T) {
+	g, err := BuildGraph(Topology{
+		Blocks: []TopoBlock{
+			{ID: "s", Kind: "service", Name: "Product API"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.Node("s").Name != "Product API" {
+		t.Errorf("want name 'Product API', got %q", g.Node("s").Name)
+	}
+}
+
+func TestBuildGraphEmptyNameOK(t *testing.T) {
+	g, err := BuildGraph(Topology{
+		Blocks: []TopoBlock{
+			{ID: "s", Kind: "service"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.Node("s").Name != "" {
+		t.Errorf("want empty name, got %q", g.Node("s").Name)
+	}
+}

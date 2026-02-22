@@ -9,6 +9,7 @@ import (
 type BlockResult struct {
 	ID         string             `json:"id"`
 	Kind       string             `json:"kind"`
+	Name       string             `json:"name,omitempty"`
 	RPS        float64            `json:"rps"`
 	CPUUtil    float64            `json:"cpu_util"`
 	MemUtil    float64            `json:"mem_util"`
@@ -231,7 +232,7 @@ func Simulate(g *Graph, rps float64, readRatio float64) ([]BlockResult, error) {
 }
 
 func computeBlock(node *Node, rps float64, readRatio float64) BlockResult {
-	br := BlockResult{ID: node.ID, Kind: node.Kind, RPS: rps}
+	br := BlockResult{ID: node.ID, Kind: node.Kind, Name: node.Name, RPS: rps}
 
 	b, ok := blocks.ByKind(node.Kind)
 	if !ok || node.Kind == "user" {

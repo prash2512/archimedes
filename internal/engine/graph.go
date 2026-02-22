@@ -13,6 +13,7 @@ type OutEdge struct {
 type Node struct {
 	ID       string
 	Kind     string
+	Name     string
 	Replicas int
 	Shards   int
 	CPUCores int
@@ -27,6 +28,7 @@ type Graph struct {
 type TopoBlock struct {
 	ID       string `json:"id"`
 	Kind     string `json:"kind"`
+	Name     string `json:"name,omitempty"`
 	Replicas int    `json:"replicas,omitempty"`
 	Shards   int    `json:"shards,omitempty"`
 	CPUCores int    `json:"cpu_cores,omitempty"`
@@ -63,6 +65,7 @@ func BuildGraph(topo Topology) (*Graph, error) {
 		g.nodes[b.ID] = &Node{
 			ID:       b.ID,
 			Kind:     b.Kind,
+			Name:     b.Name,
 			Replicas: replicas,
 			Shards:   shards,
 			CPUCores: b.CPUCores,
