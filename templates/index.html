@@ -440,6 +440,7 @@
         const edge = { from, to, line, hit, label, weight: 1.0, multiplier: 1, latencyMs: 0 };
         edges.push(edge);
         drawEdge(edge);
+        sendTopologyUpdate();
 
         hit.addEventListener('click', () => {
             deselect();
@@ -492,6 +493,7 @@
         const idx = edges.indexOf(edge);
         if (idx !== -1) edges.splice(idx, 1);
         removeEdgeDOM(edge);
+        sendTopologyUpdate();
     }
 
     function deleteBlock(el) {
@@ -503,6 +505,7 @@
         }
         deselect();
         el.remove();
+        sendTopologyUpdate();
     }
 
     function blockCenter(el) {
