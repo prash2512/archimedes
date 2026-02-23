@@ -520,6 +520,71 @@ func TestEdgeMultiplierTickMode(t *testing.T) {
 	}
 }
 
+func TestEdgeLatencyAccumulates(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "s", Kind: "service"},
+			{ID: "db", Kind: "sql_datastore"},
+		},
+		Edges: []TopoEdge{
+			{From: "u", To: "s", LatencyMs: 10},
+			{From: "s", To: "db", LatencyMs: 5},
+		},
+	})
+	results, _ := Simulate(g, 100, 1.0)
+	byID := map[string]BlockResult{}
+	for _, r := range results {
+		byID[r.ID] = r
+	}
+	if byID["s"].PathLatency < 10 {
+		t.Errorf("service path_latency: want >= 10, got %g", byID["s"].PathLatency)
+	}
+	if byID["db"].PathLatency < 15 {
+		t.Errorf("db path_latency: want >= 15, got %g", byID["db"].PathLatency)
+	}
+}
+
+func TestEdgeLatencyMaxPath(t *testing.T) {
+	// Diamond: u -> a (10ms) -> db, u -> b (50ms) -> db. DB should get max(10+a, 50+b).
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "a", Kind: "service"},
+			{ID: "b", Kind: "service"},
+			{ID: "db", Kind: "sql_datastore"},
+		},
+		Edges: []TopoEdge{
+			{From: "u", To: "a", LatencyMs: 10},
+			{From: "u", To: "b", LatencyMs: 50},
+			{From: "a", To: "db", LatencyMs: 5},
+			{From: "b", To: "db", LatencyMs: 5},
+		},
+	})
+	results, _ := Simulate(g, 100, 1.0)
+	for _, r := range results {
+		if r.ID == "db" && r.PathLatency < 55 {
+			t.Errorf("db path_latency: want >= 55 (max path), got %g", r.PathLatency)
+		}
+	}
+}
+
+func TestEdgeLatencyZeroDefault(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "s", Kind: "service"},
+		},
+		Edges: []TopoEdge{{From: "u", To: "s"}},
+	})
+	results, _ := Simulate(g, 100, 1.0)
+	for _, r := range results {
+		if r.ID == "s" && r.PathLatency > 0.001 {
+			t.Errorf("path_latency without edge latency should be ~0, got %g", r.PathLatency)
+		}
+	}
+}
+
 func TestSimulateReturnsName(t *testing.T) {
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{

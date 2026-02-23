@@ -9,6 +9,7 @@ type OutEdge struct {
 	To         string
 	Weight     float64
 	Multiplier float64
+	LatencyMs  float64
 }
 
 type Node struct {
@@ -40,6 +41,7 @@ type TopoEdge struct {
 	To         string  `json:"to"`
 	Weight     float64 `json:"weight,omitempty"`
 	Multiplier float64 `json:"multiplier,omitempty"`
+	LatencyMs  float64 `json:"latency_ms,omitempty"`
 }
 
 type Topology struct {
@@ -91,7 +93,7 @@ func BuildGraph(topo Topology) (*Graph, error) {
 		if m <= 0 {
 			m = 1.0
 		}
-		from.outgoing = append(from.outgoing, OutEdge{To: e.To, Weight: w, Multiplier: m})
+		from.outgoing = append(from.outgoing, OutEdge{To: e.To, Weight: w, Multiplier: m, LatencyMs: e.LatencyMs})
 		g.incoming[e.To]++
 	}
 

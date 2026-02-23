@@ -202,6 +202,11 @@
                 <div class="flex justify-between text-[9px] text-gray-600 mt-0.5">
                     <span>1x</span><span>1000x</span>
                 </div>
+                <div class="flex justify-between text-[10px] mb-1 mt-2">
+                    <span class="text-gray-500">Latency</span>
+                    <span id="edge-latency-val" class="text-gray-300 tabular-nums">0ms</span>
+                </div>
+                <input type="range" id="edge-latency-slider" min="0" max="500" value="0" step="5" class="w-full">
             </div>
         </main>
 
@@ -432,7 +437,7 @@
         svg.appendChild(line);
         svg.appendChild(hit);
         svg.appendChild(label);
-        const edge = { from, to, line, hit, label, weight: 1.0, multiplier: 1 };
+        const edge = { from, to, line, hit, label, weight: 1.0, multiplier: 1, latencyMs: 0 };
         edges.push(edge);
         drawEdge(edge);
 
@@ -525,6 +530,7 @@
         const parts = [];
         if (edge.weight < 1) parts.push(Math.round(edge.weight * 100) + '%');
         if (edge.multiplier > 1) parts.push(edge.multiplier + 'x');
+        if (edge.latencyMs > 0) parts.push(edge.latencyMs + 'ms');
         edge.label.textContent = parts.join(' ');
     }
 
@@ -594,6 +600,7 @@
             const te = { from: e.from.id, to: e.to.id };
             if (e.weight < 1) te.weight = e.weight;
             if (e.multiplier > 1) te.multiplier = e.multiplier;
+            if (e.latencyMs > 0) te.latency_ms = e.latencyMs;
             return te;
         });
         return { blocks: topoBlocks, edges: topoEdges, rps, read_ratio: readRatio };
@@ -774,6 +781,21 @@
             } else {
                 dBar.classList.add('hidden');
             }
+
+            // Path latency
+            let latEl = el.querySelector('.path-latency');
+            if (b.path_latency > 0.001 && el.dataset.kind !== 'user') {
+                if (!latEl) {
+                    latEl = document.createElement('div');
+                    latEl.className = 'path-latency text-[8px] text-cyan-400 mt-0.5 text-center';
+                    el.querySelector('.flex.flex-col').appendChild(latEl);
+                }
+                latEl.textContent = b.path_latency < 1
+                    ? b.path_latency.toFixed(2) + 'ms'
+                    : Math.round(b.path_latency) + 'ms';
+            } else if (latEl) {
+                latEl.remove();
+            }
         }
     }
 
@@ -903,6 +925,18 @@
         }
     });
 
+    const edgeLatencySlider = document.getElementById('edge-latency-slider');
+    const edgeLatencyVal = document.getElementById('edge-latency-val');
+
+    edgeLatencySlider.addEventListener('input', () => {
+        edgeLatencyVal.textContent = edgeLatencySlider.value + 'ms';
+        if (edgeConfigTarget) {
+            edgeConfigTarget.latencyMs = parseInt(edgeLatencySlider.value);
+            drawEdge(edgeConfigTarget);
+            sendTopologyUpdate();
+        }
+    });
+
     function showEdgeConfig(edge, mouseX, mouseY) {
         closeConfigPanel();
         edgeConfigTarget = edge;
@@ -911,6 +945,8 @@
         const multIdx = multSteps.indexOf(edge.multiplier);
         edgeMultSlider.value = multIdx >= 0 ? multIdx : 0;
         edgeMultVal.textContent = (edge.multiplier || 1) + 'x';
+        edgeLatencySlider.value = edge.latencyMs || 0;
+        edgeLatencyVal.textContent = (edge.latencyMs || 0) + 'ms';
         const canvasRect = canvas.getBoundingClientRect();
         let left = mouseX - canvasRect.left + 10;
         let top = mouseY - canvasRect.top + 10;
@@ -969,13 +1005,14 @@
             els.push(document.getElementById('block-' + nextId));
         }
         for (const e of preset.edges) {
-            const [fromIdx, toIdx, weight, multiplier] = e;
+            const [fromIdx, toIdx, weight, multiplier, latencyMs] = e;
             if (els[fromIdx] && els[toIdx]) {
                 connect(els[fromIdx], els[toIdx]);
                 const edge = edges[edges.length - 1];
                 let changed = false;
                 if (weight != null && weight < 1) { edge.weight = weight; changed = true; }
                 if (multiplier != null && multiplier > 1) { edge.multiplier = multiplier; changed = true; }
+                if (latencyMs != null && latencyMs > 0) { edge.latencyMs = latencyMs; changed = true; }
                 if (changed) drawEdge(edge);
             }
         }

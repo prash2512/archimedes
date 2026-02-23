@@ -18,8 +18,9 @@ type BlockResult struct {
 	Health     string             `json:"health"`
 	QueueDepth float64            `json:"queue_depth"`
 	Dropped    float64            `json:"dropped"`
-	Latency    float64            `json:"latency"`
-	Saturated  bool               `json:"saturated"`
+	Latency     float64            `json:"latency"`
+	PathLatency float64            `json:"path_latency"`
+	Saturated   bool               `json:"saturated"`
 	Metrics    map[string]float64 `json:"metrics,omitempty"`
 }
 
@@ -68,6 +69,7 @@ func SimulateTick(g *Graph, rps float64, readRatio float64, state *SimState) ([]
 	}
 
 	arriving := make(map[string]float64)
+	pathLatency := make(map[string]float64)
 	for _, src := range g.Sources() {
 		arriving[src.ID] = rps * tickDt
 	}
@@ -131,6 +133,7 @@ func SimulateTick(g *Graph, rps float64, readRatio float64, state *SimState) ([]
 		br.QueueDepth = bs.Queue
 		br.Dropped = dropped
 		br.Latency = effect.Latency
+		br.PathLatency = pathLatency[id] + effect.Latency
 		br.Saturated = effect.Saturated
 		br.Metrics = effect.Metrics
 		if mp, ok := effect.Metrics["mem_pressure"]; ok {
@@ -141,6 +144,9 @@ func SimulateTick(g *Graph, rps float64, readRatio float64, state *SimState) ([]
 		forwarded := processed * (1 - effect.AbsorbRatio)
 		for _, oe := range node.outgoing {
 			arriving[oe.To] += forwarded * oe.Weight * oe.Multiplier
+			if candidate := br.PathLatency + oe.LatencyMs; candidate > pathLatency[oe.To] {
+				pathLatency[oe.To] = candidate
+			}
 		}
 	}
 	return results, nil
@@ -211,7 +217,8 @@ func Simulate(g *Graph, rps float64, readRatio float64) ([]BlockResult, error) {
 		return nil, err
 	}
 
-	incoming := make(map[string]float64) // accumulated RPS per node
+	incoming := make(map[string]float64)
+	pathLatency := make(map[string]float64)
 	for _, src := range g.Sources() {
 		incoming[src.ID] = rps
 	}
@@ -222,10 +229,14 @@ func Simulate(g *Graph, rps float64, readRatio float64) ([]BlockResult, error) {
 		nodeRPS := incoming[id]
 
 		br := computeBlock(node, nodeRPS, readRatio)
+		br.PathLatency = pathLatency[id] + br.Latency
 		results = append(results, br)
 
 		for _, oe := range node.outgoing {
 			incoming[oe.To] += nodeRPS * oe.Weight * oe.Multiplier
+			if candidate := br.PathLatency + oe.LatencyMs; candidate > pathLatency[oe.To] {
+				pathLatency[oe.To] = candidate
+			}
 		}
 	}
 	return results, nil
