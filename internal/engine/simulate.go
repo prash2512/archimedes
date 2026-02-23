@@ -70,8 +70,18 @@ func SimulateTick(g *Graph, rps float64, readRatio float64, state *SimState) ([]
 
 	arriving := make(map[string]float64)
 	pathLatency := make(map[string]float64)
-	for _, src := range g.Sources() {
-		arriving[src.ID] = rps * tickDt
+	srcs := g.Sources()
+	hasUser := false
+	for _, src := range srcs {
+		if src.Kind == "user" {
+			hasUser = true
+			break
+		}
+	}
+	for _, src := range srcs {
+		if !hasUser || src.Kind == "user" {
+			arriving[src.ID] = rps * tickDt
+		}
 	}
 
 	state.CurrentTick++
@@ -219,8 +229,18 @@ func Simulate(g *Graph, rps float64, readRatio float64) ([]BlockResult, error) {
 
 	incoming := make(map[string]float64)
 	pathLatency := make(map[string]float64)
-	for _, src := range g.Sources() {
-		incoming[src.ID] = rps
+	srcs := g.Sources()
+	hasUser := false
+	for _, src := range srcs {
+		if src.Kind == "user" {
+			hasUser = true
+			break
+		}
+	}
+	for _, src := range srcs {
+		if !hasUser || src.Kind == "user" {
+			incoming[src.ID] = rps
+		}
 	}
 
 	results := make([]BlockResult, 0, len(order))
