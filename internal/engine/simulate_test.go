@@ -650,6 +650,119 @@ func TestDeadNodeTickDrainsQueue(t *testing.T) {
 	}
 }
 
+func TestYouTubeTranscodeFanOut(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "gw", Kind: "api_gateway"},
+			{ID: "upload", Kind: "service", Name: "Upload API"},
+			{ID: "tq", Kind: "kafka", Name: "Transcode Queue"},
+			{ID: "tc", Kind: "worker", Name: "Transcoder"},
+		},
+		Edges: []TopoEdge{
+			{From: "u", To: "gw"},
+			{From: "gw", To: "upload", Weight: 0.05},
+			{From: "upload", To: "tq"},
+			{From: "tq", To: "tc", Multiplier: 5},
+		},
+	})
+	results, _ := Simulate(g, 2000, 0.8)
+	byID := map[string]BlockResult{}
+	for _, r := range results {
+		byID[r.ID] = r
+	}
+	// Upload sees 5% of 2000 = 100 RPS
+	if byID["upload"].RPS < 90 || byID["upload"].RPS > 110 {
+		t.Errorf("upload should see ~100 RPS, got %g", byID["upload"].RPS)
+	}
+	// Transcoder sees 5x of upload output = ~500 RPS
+	if byID["tc"].RPS < 400 {
+		t.Errorf("transcoder should see ~500 RPS (5x fan-out), got %g", byID["tc"].RPS)
+	}
+}
+
+func TestNewsFeedFanOutAmplification(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "gw", Kind: "api_gateway"},
+			{ID: "post", Kind: "service", Name: "Post Service"},
+			{ID: "fq", Kind: "kafka", Name: "Fan-out Queue"},
+			{ID: "fw", Kind: "worker", Name: "Fan-out Worker"},
+			{ID: "fc", Kind: "redis", Name: "Feed Cache"},
+		},
+		Edges: []TopoEdge{
+			{From: "u", To: "gw"},
+			{From: "gw", To: "post", Weight: 0.10},
+			{From: "post", To: "fq"},
+			{From: "fq", To: "fw"},
+			{From: "fw", To: "fc", Multiplier: 500},
+		},
+	})
+	// 1000 RPS, 10% go to Post Service = 100 posts/sec
+	// Each post fans out 500x to Feed Cache = 50000 writes/sec
+	results, _ := Simulate(g, 1000, 0.8)
+	byID := map[string]BlockResult{}
+	for _, r := range results {
+		byID[r.ID] = r
+	}
+	if byID["fc"].RPS < 40000 {
+		t.Errorf("feed cache should see massive fan-out, got %g RPS", byID["fc"].RPS)
+	}
+	if byID["fc"].Health == "green" && byID["fc"].Bottleneck < 0.5 {
+		t.Logf("feed cache at %g RPS, bottleneck %g — Redis handles it but fan-out is confirmed", byID["fc"].RPS, byID["fc"].Bottleneck)
+	}
+}
+
+func TestNewsFeedReadPathHealthy(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "feed", Kind: "service", Name: "Feed Service"},
+			{ID: "fc", Kind: "redis", Name: "Feed Cache"},
+		},
+		Edges: []TopoEdge{
+			{From: "u", To: "feed"},
+			{From: "feed", To: "fc", Weight: 0.95},
+		},
+	})
+	results, _ := Simulate(g, 5000, 1.0)
+	byID := map[string]BlockResult{}
+	for _, r := range results {
+		byID[r.ID] = r
+	}
+	if byID["fc"].Health != "green" {
+		t.Errorf("feed cache at 5k read RPS should be green, got %s", byID["fc"].Health)
+	}
+}
+
+func TestYouTubeCDNWarmup(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "cdn", Kind: "cdn", Name: "Edge CDN"},
+			{ID: "svc", Kind: "service", Name: "Video API"},
+		},
+		Edges: []TopoEdge{
+			{From: "u", To: "cdn"},
+			{From: "cdn", To: "svc"},
+		},
+	})
+	state := NewSimState(g)
+	var lastResults []BlockResult
+	for range 50 {
+		lastResults, _ = SimulateTick(g, 10000, 0.9, state)
+	}
+	byID := map[string]BlockResult{}
+	for _, r := range lastResults {
+		byID[r.ID] = r
+	}
+	// After 50 ticks, CDN should absorb most traffic; service sees much less
+	if byID["svc"].RPS > 5000 {
+		t.Errorf("after CDN warmup, service should see reduced traffic, got %g RPS", byID["svc"].RPS)
+	}
+}
+
 func TestSimulateReturnsName(t *testing.T) {
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{

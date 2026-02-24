@@ -68,6 +68,12 @@
             <button id="preset-ecommerce"
                     class="px-2 py-0.5 text-[10px] rounded bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
                     title="Load e-commerce architecture">E-Commerce</button>
+            <button id="preset-youtube"
+                    class="px-2 py-0.5 text-[10px] rounded bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
+                    title="Load YouTube architecture">YouTube</button>
+            <button id="preset-newsfeed"
+                    class="px-2 py-0.5 text-[10px] rounded bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
+                    title="Load news feed architecture">News Feed</button>
         </div>
         <div class="ml-auto flex items-center gap-3">
             <button id="play-btn"
@@ -1107,10 +1113,77 @@
                 [11, 12],        // Fulfillment → Inventory KV
             ],
         },
+        youtube: {
+            // 0:Viewer 1:EdgeCDN 2:OriginShield 3:LB 4:GW 5:VideoAPI 6:UploadAPI
+            // 7:MetadataCache 8:VideoDB 9:VideoStorage 10:TranscodeQ 11:Transcoder 12:OutputSegments
+            blocks: [
+                { kind: 'user',           name: 'Viewer',          x: 80,   y: 300 },
+                { kind: 'cdn',            name: 'Edge CDN',        x: 230,  y: 180 },
+                { kind: 'cdn',            name: 'Origin Shield',   x: 400,  y: 100 },
+                { kind: 'load_balancer',  name: 'Load Balancer',   x: 230,  y: 420 },
+                { kind: 'api_gateway',    name: 'API Gateway',     x: 400,  y: 420 },
+                { kind: 'service',        name: 'Video API',       x: 580,  y: 300 },
+                { kind: 'service',        name: 'Upload API',      x: 580,  y: 520 },
+                { kind: 'redis',          name: 'Metadata Cache',  x: 760,  y: 180 },
+                { kind: 'sql_datastore',  name: 'Video Metadata',  x: 760,  y: 340 },
+                { kind: 's3',             name: 'Video Storage',   x: 580,  y: 100 },
+                { kind: 'kafka',          name: 'Transcode Queue', x: 760,  y: 520 },
+                { kind: 'worker',         name: 'Transcoder',      x: 580,  y: 660 },
+                { kind: 's3',             name: 'Output Segments', x: 400,  y: 660 },
+            ],
+            edges: [
+                [0, 1, 0.85, null, 2],    // Viewer → Edge CDN (85%, 2ms)
+                [0, 3, 0.15, null, 5],    // Viewer → LB (15% API, 5ms)
+                [1, 2, null, null, 10],   // Edge CDN → Origin Shield (10ms)
+                [2, 9, null, null, 20],   // Origin Shield → Video Storage (20ms)
+                [3, 4, null, null, 1],    // LB → API GW
+                [4, 5, 0.80, null, 2],   // GW → Video API (80%)
+                [4, 6, 0.05, null, 2],   // GW → Upload API (5%)
+                [5, 7, 0.90, null, 1],   // Video API → Metadata Cache (90%)
+                [5, 8, 0.30, null, 3],   // Video API → Video Metadata (30%)
+                [6, 9, null, null, 50],   // Upload API → Video Storage (50ms)
+                [6, 10, null, null, 5],   // Upload API → Transcode Queue
+                [10, 11, null, 5, 0],     // Transcode Queue → Transcoder (5x fan-out: resolution variants)
+                [11, 12, null, null, 100],// Transcoder → Output Segments (100ms)
+            ],
+        },
+        newsfeed: {
+            // 0:Publisher 1:Reader 2:LB 3:GW 4:PostService 5:FeedService
+            // 6:PostDB 7:FanoutQ 8:FanoutWorker 9:FeedCache 10:SocialGraph
+            blocks: [
+                { kind: 'user',           name: 'Publisher',       x: 80,   y: 200 },
+                { kind: 'user',           name: 'Reader',          x: 80,   y: 480 },
+                { kind: 'load_balancer',  name: 'Load Balancer',   x: 250,  y: 340 },
+                { kind: 'api_gateway',    name: 'API Gateway',     x: 420,  y: 340 },
+                { kind: 'service',        name: 'Post Service',    x: 600,  y: 200 },
+                { kind: 'service',        name: 'Feed Service',    x: 600,  y: 480 },
+                { kind: 'sql_datastore',  name: 'Post DB',         x: 800,  y: 120 },
+                { kind: 'kafka',          name: 'Fan-out Queue',   x: 800,  y: 280 },
+                { kind: 'worker',         name: 'Fan-out Worker',  x: 800,  y: 420 },
+                { kind: 'redis',          name: 'Feed Cache',      x: 800,  y: 560 },
+                { kind: 'redis',          name: 'Social Graph',    x: 600,  y: 340 },
+            ],
+            edges: [
+                [0, 2, null, null, 5],    // Publisher → LB
+                [1, 2, null, null, 5],    // Reader → LB
+                [2, 3, null, null, 1],    // LB → GW
+                [3, 4, 0.10, null, 2],   // GW → Post Service (10% writes)
+                [3, 5, 0.90, null, 2],   // GW → Feed Service (90% reads)
+                [4, 6, null, null, 3],    // Post Service → Post DB
+                [4, 7, null, null, 2],    // Post Service → Fan-out Queue
+                [4, 10, null, null, 1],   // Post Service → Social Graph
+                [7, 8],                    // Fan-out Queue → Fan-out Worker
+                [8, 9, null, 500, 1],     // Fan-out Worker → Feed Cache (500x fan-out!)
+                [5, 9, 0.95, null, 1],   // Feed Service → Feed Cache (95% hit)
+                [5, 6, 0.10, null, 3],   // Feed Service → Post DB (10% fallback)
+            ],
+        },
     };
 
     document.getElementById('preset-netflix').addEventListener('click', () => loadPreset(presets.netflix));
     document.getElementById('preset-ecommerce').addEventListener('click', () => loadPreset(presets.ecommerce));
+    document.getElementById('preset-youtube').addEventListener('click', () => loadPreset(presets.youtube));
+    document.getElementById('preset-newsfeed').addEventListener('click', () => loadPreset(presets.newsfeed));
     </script>
 
 </body>
