@@ -181,6 +181,9 @@
                         <input type="range" id="config-cpu" min="0" max="64" value="0" step="1" class="w-full">
                     </div>
                 </div>
+                <div class="mt-2 pt-2 border-t border-gray-700">
+                    <button id="config-kill-btn" class="w-full text-[10px] py-1 rounded"></button>
+                </div>
             </div>
 
             <!-- Edge config panel -->
@@ -591,6 +594,7 @@
         const topoBlocks = Array.from(blockEls).map(el => {
             const b = { id: el.id, kind: el.dataset.kind };
             if (el.dataset.name) b.name = el.dataset.name;
+            if (el.dataset.dead === 'true') b.dead = true;
             const r = parseInt(el.dataset.replicas || '1');
             const s = parseInt(el.dataset.shards || '1');
             const c = parseInt(el.dataset.cpuCores || '0');
@@ -861,6 +865,21 @@
 
         configCPU.value = el.dataset.cpuCores || '0';
         configCPUVal.textContent = configCPU.value === '0' ? 'default' : configCPU.value;
+
+        const killBtn = document.getElementById('config-kill-btn');
+        const isDead = el.dataset.dead === 'true';
+        killBtn.textContent = isDead ? 'Revive Node' : 'Kill Node';
+        killBtn.className = 'w-full text-[10px] py-1 rounded ' + (isDead
+            ? 'bg-green-900 hover:bg-green-800 text-green-300'
+            : 'bg-red-900 hover:bg-red-800 text-red-300');
+        killBtn.onclick = () => {
+            const nowDead = el.dataset.dead !== 'true';
+            el.dataset.dead = nowDead ? 'true' : '';
+            el.style.opacity = nowDead ? '0.4' : '1';
+            el.style.filter = nowDead ? 'grayscale(80%)' : '';
+            closeConfigPanel();
+            sendTopologyUpdate();
+        };
 
         // Position near the block, within canvas bounds
         const canvasRect = canvas.getBoundingClientRect();

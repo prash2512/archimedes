@@ -585,6 +585,71 @@ func TestEdgeLatencyZeroDefault(t *testing.T) {
 	}
 }
 
+func TestDeadNodeDropsAllTraffic(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "s", Kind: "service", Dead: true},
+			{ID: "db", Kind: "sql_datastore"},
+		},
+		Edges: []TopoEdge{
+			{From: "u", To: "s"},
+			{From: "s", To: "db"},
+		},
+	})
+	results, _ := Simulate(g, 1000, 1.0)
+	byID := map[string]BlockResult{}
+	for _, r := range results {
+		byID[r.ID] = r
+	}
+	if byID["s"].Health != "red" {
+		t.Errorf("dead node should be red, got %s", byID["s"].Health)
+	}
+	if byID["db"].RPS != 0 {
+		t.Errorf("downstream of dead node should see 0 RPS, got %g", byID["db"].RPS)
+	}
+}
+
+func TestDeadNodeReportsDropped(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "s", Kind: "service", Dead: true},
+		},
+		Edges: []TopoEdge{{From: "u", To: "s"}},
+	})
+	results, _ := Simulate(g, 5000, 1.0)
+	for _, r := range results {
+		if r.ID == "s" && r.Dropped < 1 {
+			t.Errorf("dead node should report drops, got %g", r.Dropped)
+		}
+	}
+}
+
+func TestDeadNodeTickDrainsQueue(t *testing.T) {
+	g := mustGraph(t, Topology{
+		Blocks: []TopoBlock{
+			{ID: "u", Kind: "user"},
+			{ID: "s", Kind: "service"},
+		},
+		Edges: []TopoEdge{{From: "u", To: "s"}},
+	})
+	state := NewSimState(g)
+	// Build up queue at high RPS
+	for range 5 {
+		SimulateTick(g, 25000, 1.0, state)
+	}
+	if state.Blocks["s"].Queue < 100 {
+		t.Fatal("expected queue buildup before killing")
+	}
+	// Now kill the node
+	g.nodes["s"].Dead = true
+	SimulateTick(g, 25000, 1.0, state)
+	if state.Blocks["s"].Queue > 0 {
+		t.Errorf("dead node queue should drain to 0, got %g", state.Blocks["s"].Queue)
+	}
+}
+
 func TestSimulateReturnsName(t *testing.T) {
 	g := mustGraph(t, Topology{
 		Blocks: []TopoBlock{

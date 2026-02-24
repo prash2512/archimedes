@@ -16,6 +16,7 @@ type Node struct {
 	ID       string
 	Kind     string
 	Name     string
+	Dead     bool
 	Replicas int
 	Shards   int
 	CPUCores int
@@ -31,6 +32,7 @@ type TopoBlock struct {
 	ID       string `json:"id"`
 	Kind     string `json:"kind"`
 	Name     string `json:"name,omitempty"`
+	Dead     bool   `json:"dead,omitempty"`
 	Replicas int    `json:"replicas,omitempty"`
 	Shards   int    `json:"shards,omitempty"`
 	CPUCores int    `json:"cpu_cores,omitempty"`
@@ -70,6 +72,7 @@ func BuildGraph(topo Topology) (*Graph, error) {
 			ID:       b.ID,
 			Kind:     b.Kind,
 			Name:     b.Name,
+			Dead:     b.Dead,
 			Replicas: replicas,
 			Shards:   shards,
 			CPUCores: b.CPUCores,

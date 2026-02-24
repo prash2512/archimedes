@@ -91,6 +91,17 @@ func SimulateTick(g *Graph, rps float64, readRatio float64, state *SimState) ([]
 		node := g.nodes[id]
 		bs := state.Blocks[id]
 
+		if node.Dead {
+			dropped := (bs.Queue + arriving[id]) / tickDt
+			bs.Queue = 0
+			results = append(results, BlockResult{
+				ID: node.ID, Kind: node.Kind, Name: node.Name,
+				Health: "red", Dropped: dropped,
+				PathLatency: pathLatency[id],
+			})
+			continue
+		}
+
 		total := bs.Queue + arriving[id]
 
 		blockRR := readRatio
@@ -247,6 +258,15 @@ func Simulate(g *Graph, rps float64, readRatio float64) ([]BlockResult, error) {
 	for _, id := range order {
 		node := g.nodes[id]
 		nodeRPS := incoming[id]
+
+		if node.Dead {
+			results = append(results, BlockResult{
+				ID: node.ID, Kind: node.Kind, Name: node.Name,
+				Health: "red", Dropped: nodeRPS,
+				PathLatency: pathLatency[id],
+			})
+			continue
+		}
 
 		br := computeBlock(node, nodeRPS, readRatio)
 		br.PathLatency = pathLatency[id] + br.Latency
